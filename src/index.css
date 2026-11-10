@@ -1,0 +1,156 @@
+@import "tailwindcss";
+@import "lenis/dist/lenis.css";
+
+@font-face {
+  font-family: "Extenda";
+  src: url("/fonts/extenda/Extenda-80-Peta-trial.ttf") format("truetype");
+  font-weight: 700 900;
+  font-style: normal;
+  font-display: swap;
+  unicode-range: U+0020-002F, U+003A-007E; /* Excludes digits 0-9 and special symbols */
+}
+
+@font-face {
+  font-family: "Extenda-Hecto";
+  src: url("/fonts/extenda/Extenda-40-Hecto-trial.ttf") format("truetype");
+  font-weight: 400 600;
+  font-style: normal;
+  font-display: swap;
+  unicode-range: U+0020-002F, U+003A-007E;
+}
+
+@font-face {
+  font-family: "Amoresa";
+  src: url("/fonts/Amoresa Regular.woff2") format("woff2"),
+       url("/fonts/Amoresa Regular.otf") format("opentype");
+  font-weight: 400 700;
+  font-style: normal;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: "Perandory-SemiCondensed";
+  src: url("/fonts/perandory-semi-condensed.otf") format("opentype");
+  font-weight: 400 600 700;
+  font-style: normal;
+  font-display: swap;
+}
+
+:root {
+  --carbon: #161616;
+  --graphite: #2B2A28;
+  --graphite-lit: #383634;
+  --graphite-deep: #1F1E1D;
+  --bone: #D6CCBA;
+  --bone-muted: rgba(214, 204, 186, 0.72);
+  --bone-faint: rgba(214, 204, 186, 0.35);
+  --bone-hairline: rgba(214, 204, 186, 0.16);
+  --signal-red: #FF0800;
+
+  /* Blue Variant Theme Variables */
+  --blue-charcoal: #14191F;
+  --deep-slate: #263443;
+  --steel-blue: #8FA9C4;
+  --blue-text-primary: #F0F2F4;
+  --blue-text-body: #BBC6D0;
+  --blue-text-muted: #A4AFBA;
+  --blue-button-bg: #8FA9C4;
+  --blue-button-text: #111820;
+  --blue-border: #465462;
+}
+
+@theme {
+  --font-serif: "Newsreader", "Iowan Old Style", Georgia, serif;
+  --font-sans: "Hanken Grotesk", system-ui, -apple-system, sans-serif;
+  --font-mono: "IBM Plex Mono", ui-monospace, monospace;
+  --font-extenda: "Extenda", "Extenda-Hecto", Impact, sans-serif;
+  --font-extenda-hecto: "Extenda-Hecto", "Extenda", sans-serif;
+  --color-carbon: #161616;
+  --color-graphite: #2B2A28;
+  --color-graphite-lit: #383634;
+  --color-bone: #D6CCBA;
+  --color-signal: #FF0800;
+}
+
+/* Custom editorial styles */
+.font-extenda {
+  font-family: "Extenda", "Extenda-Hecto", Impact, sans-serif;
+  letter-spacing: -0.01em;
+}
+
+.font-extenda-hecto {
+  font-family: "Extenda-Hecto", "Extenda", Impact, "Hanken Grotesk", sans-serif;
+  letter-spacing: 0.015em;
+  font-weight: 500;
+}
+
+.font-impact {
+  font-family: Impact, "Hanken Grotesk", system-ui, sans-serif;
+  font-weight: 700;
+  letter-spacing: -0.01em;
+}
+
+.font-serif-editorial {
+  font-family: "Newsreader", "Iowan Old Style", Georgia, serif;
+}
+
+.font-mono-archive {
+  font-family: "IBM Plex Mono", ui-monospace, monospace;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: 0.12em;
+}
+
+.font-amoresa {
+  font-family: "Amoresa", serif;
+}
+
+.font-perandory {
+  font-family: "Perandory-SemiCondensed", sans-serif;
+  letter-spacing: 0.04em;
+}
+
+/* Custom scrollbar */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+::-webkit-scrollbar-track {
+  background: #161616;
+}
+::-webkit-scrollbar-thumb {
+  background: #2B2A28;
+  border-radius: 3px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: #D6CCBA;
+}
+
+/* Subtle plate grain texture */
+.plate-grain {
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='200' height='200'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.8' numOctaves='2' stitchTiles='stitch'/%3E%3CfeColorMatrix values='0 0 0 0 1 0 0 0 0 1 0 0 0 0 1 0 0 0 .8 0'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
+  opacity: 0.08;
+}
+
+@keyframes fadeIn {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.animate-fadeIn {
+  animation: fadeIn 0.4s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  * {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}

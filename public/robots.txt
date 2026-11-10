@@ -1,0 +1,14 @@
+# Atelier NOIRÉ Robots Exclusion Protocol
+User-agent: *
+Allow: /
+Allow: /assets/
+Allow: /fonts/
+
+# Disallow private administrative and internal API namespaces
+Disallow: /admin
+Disallow: /api/
+Disallow: /admin/*
+Disallow: /api/*
+
+# Crawl delay and sitemap index
+Sitemap: https://atelier-noire.com/sitemap.xml

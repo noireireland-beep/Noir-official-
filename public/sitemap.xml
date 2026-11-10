@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9"
+        xmlns:image="http://www.google.com/schemas/sitemap-image/1.1">
+  <url>
+    <loc>https://atelier-noire.com/</loc>
+    <lastmod>2026-11-10</lastmod>
+    <changefreq>weekly</changefreq>
+    <priority>1.0</priority>
+    <image:image>
+      <image:loc>https://atelier-noire.com/assets/aistudio/lock_in_color_details_designs_and_stitches_from_the_second_picture_clothing_reference_only_lock_in_s_969fe8a9-6386-42e6-a2f5-55ec499a4390_ba8ec28b.png</image:loc>
+      <image:title>Atelier NOIRÉ Archive Drop No. 01 Tracksuit — Noir / Carbon</image:title>
+      <image:caption>Heavyweight 390 GSM loopback cotton fleece tracksuit designed in Dublin, Ireland.</image:caption>
+    </image:image>
+    <image:image>
+      <image:loc>https://atelier-noire.com/assets/aistudio/2026-11-01_07_13_34.115_0600_bb8a7721.jpg</image:loc>
+      <image:title>Atelier NOIRÉ Archive Drop No. 01 Tracksuit — Blue Charcoal</image:title>
+      <image:caption>390 GSM heavyweight fleece tracksuit in custom Blue Charcoal colorway with 20k stitch embroidery.</image:caption>
+    </image:image>
+  </url>
+</urlset>

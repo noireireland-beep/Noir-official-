@@ -1,0 +1,58 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function isAdmin() {
+      return isSignedIn() && (
+        request.auth.token.admin == true ||
+        (request.auth.token.email_verified == true && request.auth.token.email == 'noire.ireland@gmail.com') ||
+        exists(/databases/$(database)/documents/admins/$(request.auth.uid))
+      );
+    }
+
+    // Products: Public can read, only admin can modify
+    match /products/{productId} {
+      allow read: if true;
+      allow write: if isAdmin();
+    }
+
+    // Inventory: Public can read stock levels, modifications restricted to backend Admin SDK & Admins
+    match /inventory/{variantId} {
+      allow read: if true;
+      allow write: if isAdmin();
+    }
+
+    // Orders: Contain sensitive PII (name, phone, address).
+    // Direct client creation is blocked to enforce server-side pricing, inventory validation & idempotency.
+    // Privileged operations occur via Admin SDK.
+    // Reads & updates in client are restricted strictly to authorized admins.
+    match /orders/{orderId} {
+      allow read, write: if isAdmin();
+    }
+
+    // Admins allowlist: Only authenticated admins or self can read, only admin can write
+    match /admins/{adminId} {
+      allow read: if isAdmin() || (isSignedIn() && request.auth.uid == adminId);
+      allow write: if isAdmin();
+    }
+
+    // Notification Jobs: Transactional email queue & logs - admin only
+    match /notificationJobs/{jobId} {
+      allow read, write: if isAdmin();
+    }
+
+    // COD Settlements: Financial courier reconciliation - admin only
+    match /codSettlements/{settlementId} {
+      allow read, write: if isAdmin();
+    }
+
+    // Default deny all other paths
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+}

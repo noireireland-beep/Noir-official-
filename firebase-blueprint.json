@@ -1,0 +1,139 @@
+{
+  "entities": {
+    "Order": {
+      "title": "Order",
+      "description": "Atelier NOIRÉ Archive Drop customer order dossier (Cash on Delivery)",
+      "type": "object",
+      "properties": {
+        "orderReference": { "type": "string", "description": "Unique non-guessable reference e.g. NOIRE-88-COD-XXXX" },
+        "customer": {
+          "type": "object",
+          "description": "Customer contact and verified Irish postal address"
+        },
+        "items": {
+          "type": "array",
+          "description": "Snapshot of purchased items, prices and quantities"
+        },
+        "financials": {
+          "type": "object",
+          "description": "Subtotal, shipping fee (0 EUR), and final total EUR"
+        },
+        "paymentMethod": { "type": "string", "enum": ["COD"] },
+        "paymentStatus": { "type": "string", "enum": ["UNPAID", "COLLECTED", "REMITTED", "REFUNDED"] },
+        "orderStatus": { "type": "string", "enum": ["NEW", "CONFIRMED", "PROCESSING", "DISPATCHED", "DELIVERED", "DELIVERY_FAILED", "CANCELLED"] },
+        "statusHistory": {
+          "type": "array",
+          "description": "Timestamped log of order status transitions"
+        },
+        "idempotencyKey": { "type": "string" },
+        "notes": { "type": "string" },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["orderReference", "customer", "items", "financials", "paymentMethod", "paymentStatus", "orderStatus", "createdAt"]
+    },
+    "Product": {
+      "title": "Product",
+      "description": "Archive drop product specifications",
+      "type": "object",
+      "properties": {
+        "slug": { "type": "string" },
+        "title": { "type": "string" },
+        "edition": { "type": "string" },
+        "priceEur": { "type": "number" },
+        "colorways": { "type": "array" }
+      },
+      "required": ["slug", "title", "priceEur"]
+    },
+    "Inventory": {
+      "title": "Inventory",
+      "description": "Real-time stock ledger per colorway and size",
+      "type": "object",
+      "properties": {
+        "colorway": { "type": "string" },
+        "size": { "type": "string" },
+        "availableStock": { "type": "number" },
+        "reservedStock": { "type": "number" },
+        "totalStock": { "type": "number" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["colorway", "size", "availableStock", "totalStock"]
+    },
+    "Admin": {
+      "title": "Admin",
+      "description": "Authorized administrator profile allowlist",
+      "type": "object",
+      "properties": {
+        "email": { "type": "string", "format": "email" },
+        "role": { "type": "string", "enum": ["SUPER_ADMIN", "ADMIN", "COURIER_MANAGER"] },
+        "active": { "type": "boolean" },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["email", "role", "active"]
+    },
+    "NotificationJob": {
+      "title": "NotificationJob",
+      "description": "Transactional email delivery job queue and audit log",
+      "type": "object",
+      "properties": {
+        "orderId": { "type": "string" },
+        "recipientType": { "type": "string", "enum": ["ADMIN", "CUSTOMER"] },
+        "recipientEmail": { "type": "string" },
+        "status": { "type": "string", "enum": ["PENDING", "SENT", "FAILED"] },
+        "retries": { "type": "number" },
+        "error": { "type": "string" },
+        "sentAt": { "type": "string", "format": "date-time" },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["orderId", "recipientType", "recipientEmail", "status", "createdAt"]
+    },
+    "CodSettlement": {
+      "title": "CodSettlement",
+      "description": "Cash on Delivery courier collection & bank remittance reconciliation record",
+      "type": "object",
+      "properties": {
+        "orderId": { "type": "string" },
+        "orderReference": { "type": "string" },
+        "expectedAmountEur": { "type": "number" },
+        "actualCollectedEur": { "type": "number" },
+        "courierName": { "type": "string" },
+        "trackingNumber": { "type": "string" },
+        "collectionDate": { "type": "string", "format": "date-time" },
+        "settlementStatus": { "type": "string", "enum": ["PENDING_COLLECTION", "COLLECTED_BY_COURIER", "REMITTED_TO_BANK", "DISCREPANCY"] },
+        "amountRemittedEur": { "type": "number" },
+        "remittanceDate": { "type": "string", "format": "date-time" },
+        "outstandingAmountEur": { "type": "number" },
+        "reconciliationNotes": { "type": "string" },
+        "reconciledBy": { "type": "string" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["orderId", "orderReference", "expectedAmountEur", "settlementStatus"]
+    }
+  },
+  "firestore": {
+    "/orders/{orderId}": {
+      "schema": "Order",
+      "description": "Collection of customer orders with PII and COD status"
+    },
+    "/products/{productId}": {
+      "schema": "Product",
+      "description": "Authoritative product specifications"
+    },
+    "/inventory/{variantId}": {
+      "schema": "Inventory",
+      "description": "Atomic stock allocations per colorway and size"
+    },
+    "/admins/{adminId}": {
+      "schema": "Admin",
+      "description": "Authorized staff and administrator accounts"
+    },
+    "/notificationJobs/{jobId}": {
+      "schema": "NotificationJob",
+      "description": "Outbox and delivery records for transactional Resend emails"
+    },
+    "/codSettlements/{settlementId}": {
+      "schema": "CodSettlement",
+      "description": "Courier Cash on Delivery tracking and bank remittance reconciliation"
+    }
+  }
+}

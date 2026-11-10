@@ -1,0 +1,6 @@
+{
+  "name": "Atelier NOIRÉ — Archive Drop",
+  "description": "Editorial, limited-release fashion storefront for Atelier NOIRÉ's Archive Drop. 88 sets, two colourways, no reissue.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

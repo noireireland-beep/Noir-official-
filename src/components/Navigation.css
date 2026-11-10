@@ -1,0 +1,599 @@
+/* ==========================================================================
+   ATELIER NOIRÉ — ARCHITECTURAL HEADER STYLES & TOKENS
+   Adapted strictly for header scope without global resets.
+   ========================================================================== */
+
+.noire-header {
+  /* Brand Palette: Black, Blue, Charcoal & Neutral Tones */
+  --noire-obsidian: #07080A;
+  --noire-charcoal: #0E1015;
+  --noire-slate: #161A22;
+  --noire-cobalt: #2B5B84;
+  --noire-cobalt-bright: #3E7CB1;
+  --noire-alabaster: #F2F0EC;
+  --noire-stone: #8C9099;
+  --noire-pewter: #585C66;
+
+  /* Structural Rules & Surfaces */
+  --noire-bar-resting: rgba(242, 240, 236, 0.18);
+  --noire-bar-scrolled: rgba(242, 240, 236, 0.28);
+  --noire-tick-color: rgba(242, 240, 236, 0.24);
+
+  /* Typography */
+  --font-editorial: 'Instrument Sans', -apple-system, BlinkMacSystemFont, 'Helvetica Neue', sans-serif;
+  --font-technical: 'JetBrains Mono', 'SFMono-Regular', Consolas, monospace;
+
+  /* Architectural Metrics & Transitions */
+  --header-height-resting: 88px;
+  --header-height-scrolled: 62px;
+  --header-gutter: clamp(1.25rem, 3.5vw, 3.25rem);
+  --ease-architectural: cubic-bezier(0.16, 1, 0.3, 1);
+
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100%;
+  z-index: 1000;
+  background-color: transparent;
+  font-family: var(--font-editorial);
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  transition: 
+    background-color 0.5s var(--ease-architectural),
+    box-shadow 0.5s var(--ease-architectural);
+}
+
+/* Solid Lock State on Scroll (or when Selection Drawer is Open) */
+.noire-header[data-scrolled="true"],
+.noire-header[data-selection-open="true"] {
+  background-color: var(--noire-charcoal);
+  box-shadow: 0 18px 40px -15px rgba(0, 0, 0, 0.75);
+}
+
+/* Asymmetric 12-Column Swiss Ledger Grid (5 : 4 : 3 Ratio) */
+.noire-header__grid {
+  display: grid;
+  grid-template-columns: 5fr 4fr 3fr;
+  align-items: center;
+  height: var(--header-height-resting);
+  padding: 0 var(--header-gutter);
+  transition: height 0.5s var(--ease-architectural);
+}
+
+.noire-header[data-scrolled="true"] .noire-header__grid {
+  height: var(--header-height-scrolled);
+}
+
+.noire-header__zone {
+  position: relative;
+  height: 100%;
+  display: flex;
+  align-items: center;
+}
+
+/* Architectural Vertical Datum Ticks Rising from the Bottom Bar */
+.noire-header__zone--datum::before,
+.noire-header__zone--utility::before {
+  content: "";
+  position: absolute;
+  left: 0;
+  bottom: 0;
+  width: 1px;
+  height: 8px;
+  background-color: var(--noire-tick-color);
+  transition: height 0.4s var(--ease-architectural), background-color 0.4s var(--ease-architectural);
+}
+
+.noire-header[data-scrolled="true"] .noire-header__zone--datum::before,
+.noire-header[data-scrolled="true"] .noire-header__zone--utility::before {
+  height: 12px;
+  background-color: var(--noire-cobalt);
+}
+
+/* ==========================================================================
+   ZONE 01: OFFICIAL LOGO & WORDMARK WITH SCROLL-REVEALED "®"
+   ========================================================================== */
+
+.noire-brand {
+  display: inline-flex;
+  align-items: center;
+  gap: 1.125rem;
+  color: var(--noire-alabaster);
+  text-decoration: none;
+  outline: none;
+}
+
+.noire-brand__emblem-wrap {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 34px;
+  height: 31px;
+  transition: transform 0.5s var(--ease-architectural);
+}
+
+.noire-brand__emblem {
+  width: 100%;
+  height: 100%;
+  display: block;
+  transition: filter 0.4s var(--ease-architectural), transform 0.5s var(--ease-architectural);
+}
+
+/* Slight scale tightening on scroll */
+.noire-header[data-scrolled="true"] .noire-brand__emblem-wrap {
+  transform: scale(0.88);
+}
+
+.noire-brand__wordmark {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 0.45em;
+  font-size: 0.9375rem;
+  line-height: 1;
+  letter-spacing: 0.24em;
+  text-transform: uppercase;
+  white-space: nowrap;
+  transition: letter-spacing 0.5s var(--ease-architectural);
+}
+
+.noire-brand__atelier {
+  font-weight: 400;
+  color: rgba(242, 240, 236, 0.78);
+  transition: 
+    color 0.4s var(--ease-architectural),
+    max-width 0.5s var(--ease-architectural),
+    opacity 0.4s var(--ease-architectural);
+}
+
+.noire-brand__noire {
+  font-weight: 600;
+  color: var(--noire-alabaster);
+  position: relative;
+  display: inline-flex;
+  align-items: flex-start;
+}
+
+/* The "®" Mark — Hidden at Top of Page, Surgically Revealed Upon Scroll */
+.noire-brand__reg {
+  display: inline-block;
+  font-family: var(--font-technical);
+  font-size: 0.55rem;
+  font-weight: 500;
+  line-height: 1;
+  letter-spacing: 0;
+  color: #D6CCBA;
+  margin-left: 0.08em;
+  transform: translateY(5px) scale(0.75);
+  opacity: 0;
+  clip-path: inset(0 100% 0 0);
+  transition: 
+    transform 0.55s var(--ease-architectural),
+    opacity 0.45s var(--ease-architectural),
+    clip-path 0.55s var(--ease-architectural);
+}
+
+.noire-header[data-scrolled="true"] .noire-brand__reg {
+  transform: translateY(-2px) scale(1);
+  opacity: 1;
+  clip-path: inset(0 0% 0 0);
+}
+
+/* Sophisticated Identity Hover Interaction */
+.noire-brand:hover .noire-brand__emblem {
+  transform: translateY(-1px);
+  filter: drop-shadow(2px 2px 0px var(--noire-cobalt));
+}
+
+.noire-brand:hover .noire-brand__wordmark {
+  letter-spacing: 0.27em;
+}
+
+.noire-brand:hover .noire-brand__atelier {
+  color: var(--noire-alabaster);
+}
+
+/* ==========================================================================
+   ZONE 02: IRISH PROVENANCE DATUM & PRESERVED EDITORIAL ROUTES
+   ========================================================================== */
+
+.noire-header__zone--datum {
+  padding-left: 1.5rem;
+  gap: 1.5rem;
+  justify-content: space-between;
+}
+
+/* Preserved editorial routes seamlessly integrated into the architectural scheme */
+.noire-routes {
+  display: flex;
+  align-items: center;
+  gap: 1.5rem;
+}
+
+.noire-route-link {
+  font-family: var(--font-technical);
+  font-size: 0.6875rem;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: var(--noire-stone);
+  text-decoration: none;
+  transition: color 0.3s ease;
+  position: relative;
+  white-space: nowrap;
+}
+
+.noire-route-link::after {
+  content: "";
+  position: absolute;
+  bottom: -3px;
+  left: 0;
+  width: 0;
+  height: 1px;
+  background-color: var(--noire-cobalt-bright);
+  transition: width 0.3s var(--ease-architectural);
+}
+
+.noire-route-link:hover {
+  color: var(--noire-alabaster);
+}
+
+.noire-route-link:hover::after {
+  width: 100%;
+}
+
+.noire-datum {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  font-family: var(--font-technical);
+  font-size: 0.6875rem;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  user-select: none;
+  white-space: nowrap;
+}
+
+.noire-datum__indicator {
+  width: 5px;
+  height: 5px;
+  background-color: var(--noire-cobalt-bright);
+  display: inline-block;
+  transition: transform 0.4s var(--ease-architectural);
+}
+
+.noire-header[data-scrolled="true"] .noire-datum__indicator {
+  transform: rotate(45deg);
+}
+
+.noire-datum__label {
+  color: var(--noire-pewter);
+}
+
+.noire-datum__divider {
+  color: var(--noire-pewter);
+}
+
+.noire-datum__value {
+  color: var(--noire-stone);
+  transition: color 0.3s ease;
+}
+
+/* ==========================================================================
+   ZONE 03: SELECTION UTILITY (FAR RIGHT POLE)
+   ========================================================================== */
+
+.noire-header__zone--utility {
+  justify-content: flex-end;
+  padding-left: 1.5rem;
+}
+
+.noire-selection-btn {
+  appearance: none;
+  background: none;
+  border: none;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.75rem;
+  padding: 0.5rem 0;
+  color: var(--noire-alabaster);
+  font-family: var(--font-technical);
+  font-size: 0.75rem;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  position: relative;
+  white-space: nowrap;
+}
+
+/* Kinetic Slot-Roll Typography on Hover */
+.noire-selection-btn__text-track {
+  position: relative;
+  display: inline-grid;
+  overflow: hidden;
+  height: 1.15em;
+  line-height: 1.15em;
+}
+
+.noire-selection-btn__primary,
+.noire-selection-btn__secondary {
+  grid-area: 1 / 1;
+  transition: transform 0.45s var(--ease-architectural), color 0.35s ease;
+}
+
+.noire-selection-btn__secondary {
+  transform: translateY(110%);
+  color: var(--noire-cobalt-bright);
+}
+
+.noire-selection-btn:hover .noire-selection-btn__primary,
+.noire-selection-btn[aria-expanded="true"] .noire-selection-btn__primary {
+  transform: translateY(-110%);
+}
+
+.noire-selection-btn:hover .noire-selection-btn__secondary,
+.noire-selection-btn[aria-expanded="true"] .noire-selection-btn__secondary {
+  transform: translateY(0%);
+}
+
+.noire-selection-btn__counter {
+  font-variant-numeric: tabular-nums;
+  color: var(--noire-stone);
+  transition: color 0.35s ease, transform 0.35s var(--ease-architectural);
+}
+
+.noire-selection-btn:hover .noire-selection-btn__counter,
+.noire-selection-btn[aria-expanded="true"] .noire-selection-btn__counter {
+  color: var(--noire-alabaster);
+}
+
+/* ==========================================================================
+   MODERATELY THIN ARCHITECTURAL BOTTOM BAR
+   ========================================================================== */
+
+.noire-header__bottom-bar {
+  position: relative;
+  width: 100%;
+  height: 1.5px;
+  background-color: var(--noire-bar-resting);
+  overflow: hidden;
+  transition: 
+    height 0.4s var(--ease-architectural),
+    background-color 0.5s var(--ease-architectural);
+}
+
+.noire-header[data-scrolled="true"] .noire-header__bottom-bar {
+  height: 2px;
+  background-color: var(--noire-bar-scrolled);
+}
+
+/* Nocturnal Cobalt Tension Bar that Locks in Upon Scroll */
+.noire-header__bar-accent {
+  position: absolute;
+  top: 0;
+  left: var(--header-gutter);
+  width: 0;
+  height: 100%;
+  background-color: var(--noire-cobalt-bright);
+  transition: 
+    width 0.65s var(--ease-architectural),
+    left 0.5s var(--ease-architectural);
+}
+
+.noire-header[data-scrolled="true"] .noire-header__bar-accent {
+  left: 0;
+  width: 41.666%; /* Matches the 5-column Identity Zone ratio (5/12) */
+}
+
+.noire-header[data-selection-open="true"] .noire-header__bar-accent {
+  left: 0;
+  width: 100%;
+}
+
+/* ==========================================================================
+   INTEGRATED SELECTION DRAWER (ARCHITECTURAL BAG TRAY)
+   ========================================================================== */
+
+.noire-drawer {
+  background-color: var(--noire-obsidian);
+  border-bottom: 1.5px solid var(--noire-bar-scrolled);
+  max-height: 0;
+  overflow: hidden;
+  opacity: 0;
+  transition: 
+    max-height 0.55s var(--ease-architectural),
+    opacity 0.4s var(--ease-architectural);
+}
+
+.noire-header[data-selection-open="true"] .noire-drawer {
+  max-height: 260px;
+  opacity: 1;
+}
+
+.noire-drawer__inner {
+  display: grid;
+  grid-template-columns: 5fr 7fr;
+  gap: 2rem;
+  padding: 1.75rem var(--header-gutter);
+  align-items: center;
+}
+
+.noire-drawer__meta {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+  font-family: var(--font-technical);
+  font-size: 0.6875rem;
+  letter-spacing: 0.12em;
+}
+
+.noire-drawer__code {
+  color: var(--noire-cobalt-bright);
+}
+
+.noire-drawer__dispatch {
+  color: var(--noire-stone);
+}
+
+.noire-drawer__summary {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 2rem;
+  padding-left: 1.5rem;
+  border-left: 1px solid var(--noire-bar-resting);
+}
+
+.noire-drawer__item {
+  display: flex;
+  align-items: baseline;
+  gap: 1rem;
+  font-size: 0.8125rem;
+  letter-spacing: 0.08em;
+}
+
+.noire-drawer__item-index {
+  font-family: var(--font-technical);
+  font-size: 0.6875rem;
+  color: var(--noire-pewter);
+}
+
+.noire-drawer__item-title {
+  color: var(--noire-alabaster);
+  font-weight: 500;
+}
+
+.noire-drawer__item-price {
+  font-family: var(--font-technical);
+  color: var(--noire-stone);
+}
+
+.noire-drawer__cta {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.75rem;
+  padding: 0.65rem 1.15rem;
+  background-color: var(--noire-alabaster);
+  color: var(--noire-obsidian);
+  font-family: var(--font-technical);
+  font-size: 0.6875rem;
+  font-weight: 500;
+  letter-spacing: 0.14em;
+  text-decoration: none;
+  border: none;
+  cursor: pointer;
+  transition: background-color 0.3s ease, color 0.3s ease;
+}
+
+.noire-drawer__cta:hover {
+  background-color: var(--noire-cobalt);
+  color: var(--noire-alabaster);
+}
+
+/* ==========================================================================
+   SEPARATELY CONSIDERED MOBILE LAYOUT (< 768px)
+   ========================================================================== */
+
+@media (max-width: 1024px) {
+  .noire-routes {
+    display: none;
+  }
+}
+
+@media (max-width: 768px) {
+  .noire-header {
+    --header-gutter: 1rem;
+    --header-height-resting: 68px;
+    --header-height-scrolled: 54px;
+  }
+
+  .noire-header__grid {
+    grid-template-columns: 1fr auto;
+  }
+
+  /* Conceal desktop center datum column; integrate IE provenance into mobile utility */
+  .noire-header__zone--datum {
+    display: none;
+  }
+
+  .noire-brand {
+    gap: 0.5rem;
+  }
+
+  .noire-brand__emblem-wrap {
+    width: 26px;
+    height: 24px;
+  }
+
+  .noire-brand__wordmark {
+    font-size: 0.75rem;
+    letter-spacing: 0.14em;
+  }
+
+  /* On Mobile Scroll: Retract "ATELIER" smoothly so Emblem + "NOIRÉ®" locks with precision */
+  .noire-header[data-scrolled="true"] .noire-brand__atelier {
+    max-width: 0;
+    opacity: 0;
+    overflow: hidden;
+    margin: 0;
+    padding: 0;
+  }
+
+  .noire-header[data-scrolled="true"] .noire-brand__wordmark {
+    gap: 0;
+  }
+
+  .noire-header__zone--utility {
+    padding-left: 0.25rem;
+  }
+
+  .noire-selection-btn {
+    gap: 0.35rem;
+    font-size: 0.6875rem;
+    letter-spacing: 0.1em;
+    white-space: nowrap;
+  }
+
+  .noire-selection-btn__counter {
+    white-space: nowrap;
+  }
+
+  /* Inject compact Ireland tag next to mobile Selection button */
+  .noire-header__zone--utility::after {
+    content: "IE · €";
+    font-family: var(--font-technical);
+    font-size: 0.625rem;
+    letter-spacing: 0.08em;
+    color: var(--noire-pewter);
+    margin-left: 0.35rem;
+    padding-left: 0.35rem;
+    border-left: 1px solid var(--noire-bar-resting);
+    white-space: nowrap;
+  }
+
+  .noire-header[data-scrolled="true"] .noire-header__bar-accent {
+    width: 55%;
+  }
+
+  .noire-drawer__inner {
+    grid-template-columns: 1fr;
+    gap: 1.25rem;
+    padding: 1.25rem var(--header-gutter);
+  }
+
+  .noire-drawer__summary {
+    flex-direction: column;
+    align-items: flex-start;
+    padding-left: 0;
+    border-left: none;
+    gap: 1rem;
+  }
+
+  .noire-drawer__item {
+    flex-wrap: wrap;
+    gap: 0.5rem;
+  }
+
+  .noire-drawer__cta {
+    width: 100%;
+    justify-content: space-between;
+  }
+}
