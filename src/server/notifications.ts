@@ -1,8 +1,10 @@
 import { Resend } from 'resend';
 import { generateCustomerEmail, generateAdminEmail, OrderEmailData } from './email-templates';
+import { isPlaceholderEnvValue } from './firebase-admin';
 import { recordNotificationJob } from './storage-store';
 
 const ADMIN_EMAIL = 'noire.ireland@gmail.com';
+const DEFAULT_FROM_EMAIL = 'Atelier NOIRÉ <onboarding@resend.dev>';
 
 async function sendEmailViaResend(
   resend: Resend,
@@ -12,8 +14,9 @@ async function sendEmailViaResend(
   html: string,
   options?: { isCustomerNotification?: boolean; customerOriginalEmail?: string }
 ): Promise<{ success: boolean; error?: string; status: 'SENT' | 'FAILED' | 'QUEUED_PENDING_DOMAIN'; recipientUsed: string }> {
-  const preferredFrom = process.env.RESEND_FROM_EMAIL || 'Atelier NOIRÉ <onboarding@resend.dev>';
-  const fallbackFrom = 'Atelier NOIRÉ <onboarding@resend.dev>';
+  const rawFrom = process.env.RESEND_FROM_EMAIL;
+  const preferredFrom = !isPlaceholderEnvValue(rawFrom) ? rawFrom!.trim() : DEFAULT_FROM_EMAIL;
+  const fallbackFrom = DEFAULT_FROM_EMAIL;
 
   let recipient = to;
   let result = await resend.emails.send({
@@ -83,7 +86,8 @@ export async function dispatchOrderNotifications(order: OrderEmailData, adminDas
   customerSent: boolean;
   adminSent: boolean;
 }> {
-  const apiKey = process.env.RESEND_API_KEY;
+  const rawApiKey = process.env.RESEND_API_KEY;
+  const apiKey = !isPlaceholderEnvValue(rawApiKey) ? rawApiKey!.trim() : '';
   const resend = apiKey ? new Resend(apiKey) : null;
 
   let customerSent = false;
@@ -195,7 +199,8 @@ export async function resendCustomerEmail(order: OrderEmailData): Promise<{
   error?: string;
   recipient: string;
 }> {
-  const apiKey = process.env.RESEND_API_KEY;
+  const rawApiKey = process.env.RESEND_API_KEY;
+  const apiKey = !isPlaceholderEnvValue(rawApiKey) ? rawApiKey!.trim() : '';
   const resend = apiKey ? new Resend(apiKey) : null;
   const { subject, text, html } = generateCustomerEmail(order);
 

@@ -50,8 +50,8 @@
           var pathname = window.location.pathname;
           var canonical = document.getElementById('canonical-link');
           var ogUrl = document.getElementById('og-url-link');
-          if (origin && !origin.includes('localhost')) {
-            var resolvedUrl = origin + (pathname === '/admin' ? '/admin' : '/');
+          if (origin && !origin.includes('localhost') && !pathname.startsWith('/admin')) {
+            var resolvedUrl = origin + '/';
             if (canonical) canonical.href = resolvedUrl;
             if (ogUrl) ogUrl.setAttribute('content', resolvedUrl);
           }
@@ -130,7 +130,7 @@
           "name": "Atelier NOIRÉ Archive Drop No. 01 Heavyweight Tracksuit",
           "image": [
             "https://atelier-noire.com/assets/aistudio/lock_in_color_details_designs_and_stitches_from_the_second_picture_clothing_reference_only_lock_in_s_969fe8a9-6386-42e6-a2f5-55ec499a4390_ba8ec28b.png",
-            "https://atelier-noire.com/assets/aistudio/file_00000000808c81f3919e83ec5cbf4786_1_c8d0da59.jpg"
+            "https://atelier-noire.com/assets/aistudio/2026-11-01_07_13_34.115_0600_bb8a7721.jpg"
           ],
           "description": "Architecturally engineered heavyweight tracksuit designed in Dublin, Ireland. 390 GSM loopback cotton fleece hoodie paired with 280 GSM trousers and high-density 20,000-stitch chest embroidery. Strictly numbered edition of 88 sets worldwide. No reissue.",
           "sku": "AN-DROP01-TS88",

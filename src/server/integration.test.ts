@@ -292,3 +292,166 @@ test('13. normalizePrivateKey handles escaped newlines, quotes, and space-separa
   assert.equal(cleaned.includes('\\n'), false);
   assert.ok(cleaned.includes('\n'));
 });
+
+test('14. Placeholder environment detection filters unconfigured container vars', async () => {
+  const { isPlaceholderEnvValue, DEFAULT_PROJECT_ID, getConfiguredProjectId } = await import('./firebase-admin');
+  assert.equal(isPlaceholderEnvValue('your_firebase_project_id'), true);
+  assert.equal(isPlaceholderEnvValue('your_resend_api_key_here'), true);
+  assert.equal(isPlaceholderEnvValue('your_verified_email@example.com'), true);
+  assert.equal(isPlaceholderEnvValue(''), true);
+  assert.equal(isPlaceholderEnvValue('   '), true);
+  assert.equal(isPlaceholderEnvValue(undefined), true);
+  assert.equal(isPlaceholderEnvValue('gen-lang-client-0299720065'), false);
+  assert.equal(isPlaceholderEnvValue('orders@atelier-noire.com'), false);
+
+  const prevProjectId = process.env.FIREBASE_PROJECT_ID;
+  try {
+    process.env.FIREBASE_PROJECT_ID = 'your_firebase_project_id';
+    assert.equal(getConfiguredProjectId(), DEFAULT_PROJECT_ID);
+    process.env.FIREBASE_PROJECT_ID = 'custom-real-project-123';
+    assert.equal(getConfiguredProjectId(), 'custom-real-project-123');
+  } finally {
+    if (prevProjectId === undefined) delete process.env.FIREBASE_PROJECT_ID;
+    else process.env.FIREBASE_PROJECT_ID = prevProjectId;
+  }
+});
+
+test('15. Admin HMAC session tokens round-trip and reject tampering', async () => {
+  const { createAdminSessionToken, verifyAdminSessionToken, verifyAdminRequest } = await import('./admin-service');
+  const token = createAdminSessionToken('noire.ireland@gmail.com');
+  assert.ok(token.startsWith('an_'));
+
+  const ctx = verifyAdminSessionToken(token);
+  assert.ok(ctx);
+  assert.equal(ctx.email, 'noire.ireland@gmail.com');
+  assert.equal(ctx.role, 'SUPER_ADMIN');
+
+  const reqCheck = await verifyAdminRequest(`Bearer ${token}`);
+  assert.equal(reqCheck.authorized, true);
+  assert.equal(reqCheck.context?.email, 'noire.ireland@gmail.com');
+
+  assert.equal(verifyAdminSessionToken(`${token}tampered`), null);
+  const nonAdminToken = createAdminSessionToken('attacker@example.com');
+  assert.equal(verifyAdminSessionToken(nonAdminToken), null);
+});
+
+test('16. Local store fallback handles inventory, order idempotency, cancellation stock restore, and COD reconciliation', async () => {
+  const fs = await import('node:fs');
+  const path = await import('node:path');
+  const storeFile = path.resolve(process.cwd(), '.local-store.json');
+  const hadPrevious = fs.existsSync(storeFile);
+  const previousRaw = hadPrevious ? fs.readFileSync(storeFile, 'utf8') : null;
+
+  try {
+    if (hadPrevious) fs.unlinkSync(storeFile);
+
+    const {
+      getInventorySnapshot,
+      saveOrderAtomic,
+      checkIdempotentOrder,
+      updateOrderRecord,
+      reconcileCodRecord,
+      getOrderById,
+    } = await import('./storage-store');
+
+    const initialStock = await getInventorySnapshot();
+    const initialBlueM = initialStock['blue-charcoal_M'];
+    assert.equal(initialBlueM, 14);
+
+    const testOrderId = `test-order-${Date.now()}`;
+    const testIdempKey = `idemp-unit-${Date.now()}`;
+    const mockOrder = {
+      id: testOrderId,
+      orderReference: 'NOIRE-88-COD-UNITTEST',
+      customer: {
+        fullName: 'Aoife Murphy',
+        email: 'aoife@atelier-noire.ie',
+        phone: '+353 87 111 2222',
+        streetAddress: '10 Merrion Square',
+        city: 'Dublin',
+        county: 'Dublin',
+        eircode: 'D02 X285',
+        country: 'IE',
+      },
+      items: [
+        {
+          colorway: 'blue-charcoal' as const,
+          colorwayName: 'Blue Charcoal',
+          size: 'M',
+          quantity: 2,
+          unitPriceEur: 88,
+          subtotalEur: 176,
+        },
+      ],
+      financials: {
+        unitPriceEur: 88,
+        subtotalEur: 176,
+        shippingEur: 0,
+        totalEur: 176,
+        currency: 'EUR',
+      },
+      paymentMethod: 'COD' as const,
+      paymentStatus: 'UNPAID' as const,
+      orderStatus: 'NEW' as const,
+      statusHistory: [
+        {
+          status: 'NEW',
+          note: 'Order created via unit test',
+          updatedBy: 'customer',
+          timestamp: new Date().toISOString(),
+        },
+      ],
+      idempotencyKey: testIdempKey,
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+    };
+
+    const saveRes = await saveOrderAtomic(mockOrder, {
+      orderId: testOrderId,
+      orderReference: mockOrder.orderReference,
+      expectedAmountEur: 176,
+      actualCollectedEur: 0,
+      amountRemittedEur: 0,
+      outstandingAmountEur: 176,
+      settlementStatus: 'PENDING_COLLECTION',
+    });
+    assert.equal(saveRes.success, true);
+
+    const afterSaveStock = await getInventorySnapshot();
+    assert.equal(afterSaveStock['blue-charcoal_M'], initialBlueM - 2);
+
+    const idemMatch = await checkIdempotentOrder(testIdempKey);
+    assert.ok(idemMatch);
+    assert.equal(idemMatch.id, testOrderId);
+
+    const reconcileRes = await reconcileCodRecord(
+      mockOrder.orderReference,
+      {
+        courierName: 'DHL Express Ireland',
+        trackingNumber: 'IE-TEST-001',
+        actualCollectedEur: 176,
+        settlementStatus: 'REMITTED_TO_BANK',
+        amountRemittedEur: 176,
+        reconciliationNotes: 'Unit test remittance',
+      },
+      'noire.ireland@gmail.com'
+    );
+    assert.equal(reconcileRes.success, true);
+
+    const afterReconcile = await getOrderById(testOrderId);
+    assert.equal(afterReconcile?.paymentStatus, 'REMITTED');
+
+    const cancelRes = await updateOrderRecord(testOrderId, 'CANCELLED', 'noire.ireland@gmail.com', 'Unit test cancel');
+    assert.equal(cancelRes.success, true);
+    assert.equal(cancelRes.order?.orderStatus, 'CANCELLED');
+
+    const restoredStock = await getInventorySnapshot();
+    assert.equal(restoredStock['blue-charcoal_M'], initialBlueM);
+  } finally {
+    if (hadPrevious && previousRaw !== null) {
+      fs.writeFileSync(storeFile, previousRaw, 'utf8');
+    } else if (fs.existsSync(storeFile)) {
+      fs.unlinkSync(storeFile);
+    }
+  }
+});

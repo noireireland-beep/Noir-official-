@@ -64,6 +64,8 @@ export const ArchivePreloader: React.FC<ArchivePreloaderProps> = ({ onComplete }
   const progressObj = useRef<{ value: number }>({ value: 0 });
   const hasCompletedRef = useRef<boolean>(false);
   const retainedElementsRef = useRef<(HTMLImageElement | HTMLVideoElement)[]>([]);
+  const onCompleteRef = useRef(onComplete);
+  onCompleteRef.current = onComplete;
 
   useEffect(() => {
     let active = true;
@@ -161,7 +163,7 @@ export const ArchivePreloader: React.FC<ArchivePreloaderProps> = ({ onComplete }
             onComplete: () => {
               unlockScroll();
               if (active) {
-                onComplete();
+                onCompleteRef.current();
               }
             },
           });
@@ -181,7 +183,7 @@ export const ArchivePreloader: React.FC<ArchivePreloaderProps> = ({ onComplete }
             }, '-=0.08');
           } else {
             unlockScroll();
-            setTimeout(onComplete, 400);
+            setTimeout(() => onCompleteRef.current(), 400);
           }
         });
       });
@@ -191,7 +193,7 @@ export const ArchivePreloader: React.FC<ArchivePreloaderProps> = ({ onComplete }
     if (document.fonts) {
       Promise.all([
         document.fonts.load('16px Amoresa').catch(() => null),
-        document.fonts.load('16px perandory-semi-condensed').catch(() => null),
+        document.fonts.load('16px Perandory-SemiCondensed').catch(() => null),
         document.fonts.load('16px Caveat').catch(() => null),
         document.fonts.ready,
       ]).then(() => {
@@ -262,7 +264,7 @@ export const ArchivePreloader: React.FC<ArchivePreloaderProps> = ({ onComplete }
       if (videoFallbackTimer) clearTimeout(videoFallbackTimer);
       retainedElementsRef.current = [];
     };
-  }, [onComplete]);
+  }, []);
 
   return (
     <aside

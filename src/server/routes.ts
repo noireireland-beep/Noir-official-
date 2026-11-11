@@ -10,7 +10,8 @@ import {
   ADMIN_CONFIGURED_PASSWORD,
   createAdminSessionToken,
 } from './admin-service';
-import { getAdminDb } from './firebase-admin';
+import { isPlaceholderEnvValue } from './firebase-admin';
+import { getInventorySnapshot } from './storage-store';
 import { createRateLimiter } from './rate-limiter';
 
 export const apiRouter = Router();
@@ -32,16 +33,9 @@ const adminRateLimiter = createRateLimiter({
 // ── CUSTOMER ENDPOINTS ────────────────────────────────────────────────────────
 
 // Live stock availability
-apiRouter.get('/inventory', async (req: Request, res: Response) => {
+apiRouter.get('/inventory', async (_req: Request, res: Response) => {
   try {
-    const db = getAdminDb();
-    const snapshot = await db.collection('inventory').get();
-    const stock: Record<string, number> = {};
-
-    snapshot.forEach((doc: any) => {
-      stock[doc.id] = doc.data().availableStock ?? 0;
-    });
-
+    const stock = await getInventorySnapshot();
     res.json({ success: true, stock });
   } catch (err) {
     res.status(500).json({ success: false, error: 'Failed to retrieve inventory.' });
@@ -251,8 +245,10 @@ apiRouter.post('/admin/orders/:id/reconcile', requireAdmin, async (req: Request,
 
 // Admin Email Service Health & Environment Status
 apiRouter.get('/admin/email-status', requireAdmin, async (_req: Request, res: Response) => {
-  const hasApiKey = Boolean(process.env.RESEND_API_KEY && process.env.RESEND_API_KEY.trim().length > 0);
-  const fromEmail = process.env.RESEND_FROM_EMAIL || 'Atelier NOIRÉ <onboarding@resend.dev>';
+  const hasApiKey = !isPlaceholderEnvValue(process.env.RESEND_API_KEY);
+  const fromEmail = !isPlaceholderEnvValue(process.env.RESEND_FROM_EMAIL)
+    ? process.env.RESEND_FROM_EMAIL!.trim()
+    : 'Atelier NOIRÉ <onboarding@resend.dev>';
   const isCustomDomain = fromEmail !== 'Atelier NOIRÉ <onboarding@resend.dev>' && !fromEmail.includes('@resend.dev');
 
   res.json({

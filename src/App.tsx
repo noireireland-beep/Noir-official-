@@ -41,6 +41,7 @@ export default function App() {
   const [isCareModalOpen, setIsCareModalOpen] = useState<boolean>(false);
   const [careModalTab, setCareModalTab] = useState<CareModalTab>('returns');
   const [isArchiveReady, setIsArchiveReady] = useState<boolean>(false);
+  const isArchiveReadyRef = React.useRef<boolean>(false);
   const lenisRef = React.useRef<Lenis | null>(null);
 
   useEffect(() => {
@@ -87,6 +88,8 @@ export default function App() {
 
   // Disable background scrolling while inside acquisition dossier or client care modal
   useEffect(() => {
+    if (isAdminRoute) return;
+
     if (isCartOpen || isCareModalOpen) {
       lenisRef.current?.stop();
       document.body.style.overflow = 'hidden';
@@ -95,11 +98,18 @@ export default function App() {
       document.body.style.overflow = '';
       document.body.style.touchAction = '';
     }
-  }, [isCartOpen, isCareModalOpen, isArchiveReady]);
+  }, [isAdminRoute, isCartOpen, isCareModalOpen, isArchiveReady]);
 
   useEffect(() => {
+    if (isAdminRoute) {
+      document.documentElement.style.overflow = '';
+      document.body.style.overflow = '';
+      document.body.style.touchAction = '';
+      return;
+    }
+
     const isReducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
-    if (isReducedMotion || isAdminRoute) return;
+    if (isReducedMotion) return;
 
     // Mobile & Touch Device Optimization:
     // ignoreMobileResize prevents aggressive pin recalibration on mobile URL bar collapse/expand
@@ -124,8 +134,12 @@ export default function App() {
     lenisRef.current = lenis;
 
     // Lock Lenis while archive preloader is active
-    if (!isArchiveReady) {
+    if (!isArchiveReadyRef.current) {
       lenis.stop();
+    } else {
+      requestAnimationFrame(() => {
+        ScrollTrigger.refresh();
+      });
     }
 
     lenis.on('scroll', ScrollTrigger.update);
@@ -150,7 +164,7 @@ export default function App() {
       }).catch(() => null);
     }
 
-    let orientationTimer: NodeJS.Timeout;
+    let orientationTimer: ReturnType<typeof setTimeout>;
     const handleOrientation = () => {
       clearTimeout(orientationTimer);
       orientationTimer = setTimeout(() => {
@@ -167,16 +181,19 @@ export default function App() {
       lenis.destroy();
       lenisRef.current = null;
     };
-  }, []);
+  }, [isAdminRoute]);
 
   const totalCartCount = cartItems.reduce((acc, item) => acc + item.quantity, 0);
 
   const handleAddToCart = (colorway: 'carbon' | 'blue-charcoal', size: string) => {
+    if (size === 'S') return;
     setCartItems((prev) => {
       const existing = prev.find((i) => i.colorway === colorway && i.size === size);
       if (existing) {
         return prev.map((i) =>
-          i.colorway === colorway && i.size === size ? { ...i, quantity: i.quantity + 1 } : i
+          i.colorway === colorway && i.size === size
+            ? { ...i, quantity: Math.min(5, i.quantity + 1) }
+            : i
         );
       }
       return [...prev, { colorway, size, quantity: 1 }];
@@ -189,12 +206,14 @@ export default function App() {
   };
 
   const handleUpdateQuantity = (index: number, quantity: number) => {
+    const clamped = Math.max(1, Math.min(5, quantity));
     setCartItems((prev) =>
-      prev.map((item, i) => (i === index ? { ...item, quantity } : item))
+      prev.map((item, i) => (i === index ? { ...item, quantity: clamped } : item))
     );
   };
 
-  const handlePreloaderComplete = () => {
+  const handlePreloaderComplete = React.useCallback(() => {
+    isArchiveReadyRef.current = true;
     setIsArchiveReady(true);
     if (lenisRef.current) {
       lenisRef.current.start();
@@ -205,7 +224,7 @@ export default function App() {
       setTimeout(() => ScrollTrigger.refresh(), 200);
       setTimeout(() => ScrollTrigger.refresh(), 750);
     });
-  };
+  }, []);
 
   const handleOpenCareModal = (tab: CareModalTab = 'returns') => {
     setCareModalTab(tab);

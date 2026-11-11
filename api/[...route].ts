@@ -9,7 +9,8 @@ import {
   ADMIN_CONFIGURED_PASSWORD,
   createAdminSessionToken,
 } from '../src/server/admin-service';
-import { getAdminDb } from '../src/server/firebase-admin';
+import { isPlaceholderEnvValue } from '../src/server/firebase-admin';
+import { getInventorySnapshot } from '../src/server/storage-store';
 
 function setCorsHeaders(res: VercelResponse): void {
   res.setHeader('Access-Control-Allow-Origin', '*');
@@ -65,12 +66,7 @@ export default async function handler(
   try {
     // ── GET /api/inventory ────────────────────────────────────────────────────
     if (subPath === '/inventory' && method === 'GET') {
-      const db = getAdminDb();
-      const snapshot = await db.collection('inventory').get();
-      const stock: Record<string, number> = {};
-      snapshot.forEach((doc) => {
-        stock[doc.id] = (doc.data().availableStock as number) ?? 0;
-      });
+      const stock = await getInventorySnapshot();
       res.status(200).json({ success: true, stock });
       return;
     }
@@ -179,13 +175,10 @@ export default async function handler(
 
       // GET /api/admin/email-status
       if (subPath === '/admin/email-status' && method === 'GET') {
-        const hasApiKey = Boolean(
-          process.env.RESEND_API_KEY &&
-            process.env.RESEND_API_KEY.trim().length > 0
-        );
-        const fromEmail =
-          process.env.RESEND_FROM_EMAIL ||
-          'Atelier NOIRÉ <onboarding@resend.dev>';
+        const hasApiKey = !isPlaceholderEnvValue(process.env.RESEND_API_KEY);
+        const fromEmail = !isPlaceholderEnvValue(process.env.RESEND_FROM_EMAIL)
+          ? process.env.RESEND_FROM_EMAIL!.trim()
+          : 'Atelier NOIRÉ <onboarding@resend.dev>';
         const isCustomDomain =
           fromEmail !== 'Atelier NOIRÉ <onboarding@resend.dev>' &&
           !fromEmail.includes('@resend.dev');

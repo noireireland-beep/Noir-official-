@@ -124,7 +124,7 @@ export const ProductVariants: React.FC<ProductVariantsProps> = ({
 
   const handleApplyRecommendedSize = () => {
     const rec = recommendSize(customChest);
-    setSelectedSize(rec);
+    setSelectedSize(rec === 'S' ? 'M' : rec);
     setShowSizeCalculator(false);
   };
 

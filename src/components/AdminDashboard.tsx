@@ -69,6 +69,8 @@ export const AdminDashboard: React.FC = () => {
   const [emailServiceStatus, setEmailServiceStatus] = useState<{ hasApiKey: boolean; fromEmail: string; isCustomDomain: boolean; mode: string } | null>(null);
   const [isResendingEmail, setIsResendingEmail] = useState<boolean>(false);
   const [resendNotificationResult, setResendNotificationResult] = useState<{ success: boolean; message: string } | null>(null);
+  const [statusUpdateResult, setStatusUpdateResult] = useState<{ success: boolean; message: string } | null>(null);
+  const [reconcileResult, setReconcileResult] = useState<{ success: boolean; message: string } | null>(null);
 
 
   // Helper to obtain bearer token securely
@@ -140,6 +142,14 @@ export const AdminDashboard: React.FC = () => {
 
       // 1. Fetch Stats
       const statsRes = await fetch('/api/admin/stats', { headers });
+      if (statsRes.status === 401 || statsRes.status === 403) {
+        if (adminSession?.token) {
+          sessionStorage.removeItem('noire_admin_token');
+          sessionStorage.removeItem('noire_admin_email');
+          setAdminSession(null);
+        }
+        return;
+      }
       if (statsRes.ok) {
         const statsData = await statsRes.json();
         if (statsData.success) {
@@ -154,6 +164,14 @@ export const AdminDashboard: React.FC = () => {
       if (searchTerm) params.append('search', searchTerm);
 
       const ordersRes = await fetch(`/api/admin/orders?${params.toString()}`, { headers });
+      if (ordersRes.status === 401 || ordersRes.status === 403) {
+        if (adminSession?.token) {
+          sessionStorage.removeItem('noire_admin_token');
+          sessionStorage.removeItem('noire_admin_email');
+          setAdminSession(null);
+        }
+        return;
+      }
       if (ordersRes.ok) {
         const ordersData = await ordersRes.json();
         if (ordersData.success) {
@@ -219,6 +237,13 @@ export const AdminDashboard: React.FC = () => {
       fetchDashboardData();
     }
   }, [activeAdmin, filterStatus, filterPayment, searchTerm]);
+
+  // Reset drawer feedback banners only when switching to a different order
+  useEffect(() => {
+    setStatusUpdateResult(null);
+    setReconcileResult(null);
+    setResendNotificationResult(null);
+  }, [selectedOrder?.id]);
 
   // Sync selected order to reconciliation state
   useEffect(() => {
@@ -291,8 +316,9 @@ export const AdminDashboard: React.FC = () => {
 
   const handleUpdateStatusSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!selectedOrder || !user) return;
+    if (!selectedOrder || !activeAdmin) return;
     setIsUpdatingStatus(true);
+    setStatusUpdateResult(null);
 
     try {
       const token = await getAuthToken();
@@ -312,12 +338,24 @@ export const AdminDashboard: React.FC = () => {
       if (res.ok && data.success) {
         setStatusUpdateNote('');
         setSelectedOrder(data.order);
+        setStatusUpdateResult({
+          success: true,
+          message: `✓ Status transitioned to ${newSelectedStatus}.`,
+        });
         await fetchDashboardData();
       } else {
-        alert(data.error || 'Failed to update status.');
+        setStatusUpdateResult({
+          success: false,
+          message: data.error || 'Failed to update status.',
+        });
       }
-    } catch (err) {
+    } catch (err: unknown) {
       console.error('Error updating order status:', err);
+      const msg = err instanceof Error ? err.message : String(err);
+      setStatusUpdateResult({
+        success: false,
+        message: `Error updating order status: ${msg}`,
+      });
     } finally {
       setIsUpdatingStatus(false);
     }
@@ -325,8 +363,9 @@ export const AdminDashboard: React.FC = () => {
 
   const handleReconcileSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!selectedOrder || !user) return;
+    if (!selectedOrder || !activeAdmin) return;
     setIsReconciling(true);
+    setReconcileResult(null);
 
     try {
       const token = await getAuthToken();
@@ -348,7 +387,10 @@ export const AdminDashboard: React.FC = () => {
 
       const data = await res.json();
       if (res.ok && data.success) {
-        alert('COD reconciliation recorded and verified.');
+        setReconcileResult({
+          success: true,
+          message: '✓ COD reconciliation recorded and verified.',
+        });
         await fetchDashboardData();
         // Update local order payment status view
         setSelectedOrder((prev) => prev ? {
@@ -356,10 +398,18 @@ export const AdminDashboard: React.FC = () => {
           paymentStatus: settlementStatus === 'REMITTED_TO_BANK' ? 'REMITTED' : settlementStatus === 'COLLECTED_BY_COURIER' ? 'COLLECTED' : 'UNPAID'
         } : null);
       } else {
-        alert(data.error || 'Failed to reconcile COD settlement.');
+        setReconcileResult({
+          success: false,
+          message: data.error || 'Failed to reconcile COD settlement.',
+        });
       }
-    } catch (err) {
+    } catch (err: unknown) {
       console.error('Error during COD reconciliation:', err);
+      const msg = err instanceof Error ? err.message : String(err);
+      setReconcileResult({
+        success: false,
+        message: `Error recording COD reconciliation: ${msg}`,
+      });
     } finally {
       setIsReconciling(false);
     }
@@ -496,6 +546,11 @@ export const AdminDashboard: React.FC = () => {
 
           <a
             href="/"
+            onClick={(e) => {
+              e.preventDefault();
+              window.history.pushState({}, '', '/');
+              window.dispatchEvent(new PopStateEvent('popstate'));
+            }}
             className="px-3 py-1.5 border border-[#2B2A28] hover:border-[#D6CCBA] text-[#D6CCBA]/70 hover:text-white uppercase tracking-wider transition-colors"
           >
             Storefront &rarr;
@@ -1025,8 +1080,18 @@ export const AdminDashboard: React.FC = () => {
                   disabled={isUpdatingStatus}
                   className="w-full py-2.5 bg-[#D6CCBA] hover:bg-white text-[#161616] font-bold uppercase tracking-wider transition-colors cursor-pointer disabled:opacity-50"
                 >
-                  {isUpdatingStatus ? 'Updating Status...' : 'Commit Status Transition &rarr;'}
+                  {isUpdatingStatus ? 'Updating Status...' : 'Commit Status Transition →'}
                 </button>
+
+                {statusUpdateResult && (
+                  <div className={`mt-2 p-2 text-[10px] leading-relaxed border ${
+                    statusUpdateResult.success
+                      ? 'bg-emerald-950/40 border-emerald-800 text-emerald-300'
+                      : 'bg-red-950/40 border-red-800 text-red-300'
+                  }`}>
+                    {statusUpdateResult.message}
+                  </div>
+                )}
               </form>
 
               {/* Phase 7 COD Reconciliation Form */}
@@ -1101,6 +1166,16 @@ export const AdminDashboard: React.FC = () => {
                 >
                   {isReconciling ? 'Saving...' : 'Verify & Record COD Settlement'}
                 </button>
+
+                {reconcileResult && (
+                  <div className={`mt-2 p-2 text-[10px] leading-relaxed border ${
+                    reconcileResult.success
+                      ? 'bg-emerald-950/40 border-emerald-800 text-emerald-300'
+                      : 'bg-red-950/40 border-red-800 text-red-300'
+                  }`}>
+                    {reconcileResult.message}
+                  </div>
+                )}
               </form>
 
               {/* Status History Audit Trail */}

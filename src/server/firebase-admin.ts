@@ -3,8 +3,47 @@ import { initializeApp, getApps, cert, App } from 'firebase-admin/app';
 import { getFirestore, Firestore } from 'firebase-admin/firestore';
 import { getAuth, Auth } from 'firebase-admin/auth';
 
-const DEFAULT_PROJECT_ID = 'gen-lang-client-0299720065';
-const DEFAULT_FIRESTORE_DATABASE_ID = 'ai-studio-noirscrolldriven-f315def4-d182-4618-969f-6da452cde3b7';
+export const DEFAULT_PROJECT_ID = 'gen-lang-client-0299720065';
+export const DEFAULT_FIRESTORE_DATABASE_ID = 'ai-studio-noirscrolldriven-f315def4-d182-4618-969f-6da452cde3b7';
+
+export function isPlaceholderEnvValue(val?: string | null): boolean {
+  if (!val || typeof val !== 'string') return true;
+  const trimmed = val.trim();
+  if (!trimmed) return true;
+  const lower = trimmed.toLowerCase();
+  return (
+    lower.startsWith('your_') ||
+    lower.startsWith('your-') ||
+    lower.startsWith('replace_with') ||
+    lower.startsWith('placeholder') ||
+    lower === 'changeme' ||
+    lower === 'null' ||
+    lower === 'undefined' ||
+    lower.includes('example.com') ||
+    lower.includes('your_firebase') ||
+    lower.includes('your-firebase') ||
+    lower.includes('your_resend') ||
+    lower.includes('your-resend')
+  );
+}
+
+export function isCredentialOrPermissionError(err: unknown): boolean {
+  const msg = (err instanceof Error ? err.message : String(err)).toLowerCase();
+  return (
+    msg.includes('permission_denied') ||
+    msg.includes('permission denied') ||
+    msg.includes('unauthenticated') ||
+    msg.includes('credentials') ||
+    msg.includes('default credentials') ||
+    msg.includes('missing or insufficient permissions') ||
+    msg.includes('private_key')
+  );
+}
+
+export function getConfiguredProjectId(): string {
+  const envProjectId = process.env.FIREBASE_PROJECT_ID;
+  return !isPlaceholderEnvValue(envProjectId) ? envProjectId!.trim() : DEFAULT_PROJECT_ID;
+}
 
 let adminApp: App | null = null;
 
@@ -49,6 +88,42 @@ export function normalizePrivateKey(rawKey: string): string {
   return k;
 }
 
+export function hasValidServiceAccountCredentials(): boolean {
+  if (!isPlaceholderEnvValue(process.env.FIREBASE_SERVICE_ACCOUNT_KEY)) {
+    try {
+      let saRaw = process.env.FIREBASE_SERVICE_ACCOUNT_KEY!.trim();
+      while (
+        (saRaw.startsWith('"') && saRaw.endsWith('"')) ||
+        (saRaw.startsWith("'") && saRaw.endsWith("'"))
+      ) {
+        saRaw = saRaw.slice(1, -1).trim();
+      }
+      const sa = JSON.parse(saRaw);
+      if (sa && typeof sa.client_email === 'string' && typeof sa.private_key === 'string') {
+        const key = normalizePrivateKey(sa.private_key);
+        crypto.createPrivateKey(key);
+        return true;
+      }
+    } catch {
+      // Fall through to check individual env vars
+    }
+  }
+
+  const clientEmail = process.env.FIREBASE_CLIENT_EMAIL;
+  const rawPrivateKey = process.env.FIREBASE_PRIVATE_KEY;
+  if (!isPlaceholderEnvValue(clientEmail) && !isPlaceholderEnvValue(rawPrivateKey)) {
+    try {
+      const privateKey = normalizePrivateKey(rawPrivateKey!);
+      crypto.createPrivateKey(privateKey);
+      return true;
+    } catch {
+      return false;
+    }
+  }
+
+  return false;
+}
+
 export function getAdminApp(): App {
   if (adminApp) return adminApp;
 
@@ -58,12 +133,12 @@ export function getAdminApp(): App {
     return adminApp;
   }
 
-  const projectId = process.env.FIREBASE_PROJECT_ID || DEFAULT_PROJECT_ID;
+  const projectId = getConfiguredProjectId();
 
   // 1. Full JSON Service Account Key string in env
-  if (process.env.FIREBASE_SERVICE_ACCOUNT_KEY) {
+  if (!isPlaceholderEnvValue(process.env.FIREBASE_SERVICE_ACCOUNT_KEY)) {
     try {
-      let saRaw = process.env.FIREBASE_SERVICE_ACCOUNT_KEY.trim();
+      let saRaw = process.env.FIREBASE_SERVICE_ACCOUNT_KEY!.trim();
       while (
         (saRaw.startsWith('"') && saRaw.endsWith('"')) ||
         (saRaw.startsWith("'") && saRaw.endsWith("'"))
@@ -78,7 +153,7 @@ export function getAdminApp(): App {
       }
       adminApp = initializeApp({
         credential: cert(serviceAccount),
-        projectId: serviceAccount.project_id || projectId,
+        projectId: !isPlaceholderEnvValue(serviceAccount.project_id) ? serviceAccount.project_id : projectId,
       });
       return adminApp;
     } catch (err: unknown) {
@@ -88,16 +163,16 @@ export function getAdminApp(): App {
   }
 
   // 2. Individual Client Email and Private Key in env
-  if (process.env.FIREBASE_CLIENT_EMAIL && process.env.FIREBASE_PRIVATE_KEY) {
+  if (!isPlaceholderEnvValue(process.env.FIREBASE_CLIENT_EMAIL) && !isPlaceholderEnvValue(process.env.FIREBASE_PRIVATE_KEY)) {
     try {
-      const privateKey = normalizePrivateKey(process.env.FIREBASE_PRIVATE_KEY);
+      const privateKey = normalizePrivateKey(process.env.FIREBASE_PRIVATE_KEY!);
       // Pre-validate with Node crypto to gracefully catch any invalid key before cert()
       crypto.createPrivateKey(privateKey);
 
       adminApp = initializeApp({
         credential: cert({
           projectId,
-          clientEmail: process.env.FIREBASE_CLIENT_EMAIL.trim(),
+          clientEmail: process.env.FIREBASE_CLIENT_EMAIL!.trim(),
           privateKey,
         }),
         projectId,
@@ -115,7 +190,7 @@ export function getAdminApp(): App {
       projectId,
     });
     return adminApp;
-  } catch (err) {
+  } catch {
     adminApp = initializeApp({ projectId }, 'atelier-noire-admin');
     return adminApp;
   }

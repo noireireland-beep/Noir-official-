@@ -1,9 +1,15 @@
 import fs from 'fs';
+import os from 'os';
 import path from 'path';
-import { getAdminDb } from './firebase-admin';
+import {
+  getAdminDb,
+  hasValidServiceAccountCredentials,
+  isCredentialOrPermissionError,
+} from './firebase-admin';
 import { OrderRecord } from './orders-service';
 
 const LOCAL_DB_PATH = path.resolve(process.cwd(), '.local-store.json');
+const TMP_DB_PATH = path.join(os.tmpdir(), 'atelier-noire-local-store.json');
 
 interface LocalStoreSchema {
   orders: Record<string, OrderRecord>;
@@ -12,7 +18,7 @@ interface LocalStoreSchema {
   notificationJobs: Record<string, any>;
 }
 
-const DEFAULT_INVENTORY: Record<string, { availableStock: number; totalStock: number }> = {
+export const DEFAULT_INVENTORY: Record<string, { availableStock: number; totalStock: number }> = {
   'carbon_S': { availableStock: 7, totalStock: 7 },
   'carbon_M': { availableStock: 14, totalStock: 14 },
   'carbon_L': { availableStock: 12, totalStock: 12 },
@@ -25,38 +31,109 @@ const DEFAULT_INVENTORY: Record<string, { availableStock: number; totalStock: nu
   'blue-charcoal_XXL': { availableStock: 2, totalStock: 2 },
 };
 
+function cloneDefaultInventory(): Record<string, { availableStock: number; totalStock: number }> {
+  const cloned: Record<string, { availableStock: number; totalStock: number }> = {};
+  for (const [key, value] of Object.entries(DEFAULT_INVENTORY)) {
+    cloned[key] = { ...value };
+  }
+  return cloned;
+}
+
+function resolveReadableStorePath(): string | null {
+  if (fs.existsSync(LOCAL_DB_PATH)) return LOCAL_DB_PATH;
+  if (fs.existsSync(TMP_DB_PATH)) return TMP_DB_PATH;
+  return null;
+}
+
 function readLocalStore(): LocalStoreSchema {
+  const defaults = cloneDefaultInventory();
   try {
-    if (fs.existsSync(LOCAL_DB_PATH)) {
-      const raw = fs.readFileSync(LOCAL_DB_PATH, 'utf-8');
-      return JSON.parse(raw);
+    const storePath = resolveReadableStorePath();
+    if (storePath) {
+      const raw = fs.readFileSync(storePath, 'utf-8');
+      const parsed = JSON.parse(raw) as Partial<LocalStoreSchema>;
+      return {
+        orders: parsed.orders || {},
+        inventory: { ...defaults, ...(parsed.inventory || {}) },
+        codSettlements: parsed.codSettlements || {},
+        notificationJobs: parsed.notificationJobs || {},
+      };
     }
   } catch (err) {
     console.warn('Error reading local store, resetting:', err);
   }
   return {
     orders: {},
-    inventory: { ...DEFAULT_INVENTORY },
+    inventory: defaults,
     codSettlements: {},
     notificationJobs: {},
   };
 }
 
 function writeLocalStore(data: LocalStoreSchema) {
+  const serialized = JSON.stringify(data, null, 2);
   try {
-    fs.writeFileSync(LOCAL_DB_PATH, JSON.stringify(data, null, 2), 'utf-8');
-  } catch (err) {
-    console.error('Error writing local store:', err);
+    fs.writeFileSync(LOCAL_DB_PATH, serialized, 'utf-8');
+  } catch {
+    try {
+      fs.writeFileSync(TMP_DB_PATH, serialized, 'utf-8');
+    } catch (err) {
+      console.error('Error writing local store:', err);
+    }
   }
 }
 
 let isUsingFallback = false;
 
+function shouldUseLocalFallback(): boolean {
+  if (isUsingFallback) return true;
+  if (!hasValidServiceAccountCredentials() && !process.env.K_SERVICE) {
+    isUsingFallback = true;
+    return true;
+  }
+  return false;
+}
+
+export async function getInventorySnapshot(): Promise<Record<string, number>> {
+  const stock: Record<string, number> = {};
+  for (const [variantId, entry] of Object.entries(DEFAULT_INVENTORY)) {
+    stock[variantId] = entry.availableStock;
+  }
+
+  if (!shouldUseLocalFallback()) {
+    try {
+      const db = getAdminDb();
+      const snapshot = await db.collection('inventory').get();
+      snapshot.forEach((doc: any) => {
+        const data = doc.data() || {};
+        if (typeof data.availableStock === 'number') {
+          stock[doc.id] = data.availableStock;
+        }
+      });
+      return stock;
+    } catch (err: unknown) {
+      if (isCredentialOrPermissionError(err)) {
+        isUsingFallback = true;
+      } else {
+        throw err;
+      }
+    }
+  }
+
+  const store = readLocalStore();
+  for (const [variantId, entry] of Object.entries(store.inventory)) {
+    if (entry && typeof entry.availableStock === 'number') {
+      stock[variantId] = entry.availableStock;
+    }
+  }
+  return stock;
+}
+
 export async function checkIdempotentOrder(idempotencyKey?: string): Promise<OrderRecord | null> {
   if (!idempotencyKey) return null;
-  const db = getAdminDb();
 
-  if (!isUsingFallback) {
+  if (!shouldUseLocalFallback()) {
+    const db = getAdminDb();
     try {
       const existingQuery = await db
         .collection('orders')
@@ -68,14 +145,12 @@ export async function checkIdempotentOrder(idempotencyKey?: string): Promise<Ord
         const doc = existingQuery.docs[0];
         return { id: doc.id, ...doc.data() } as OrderRecord;
       }
+      return null;
     } catch (err: unknown) {
-      const errMsg = err instanceof Error ? err.message : String(err);
-      if (
-        errMsg.includes('PERMISSION_DENIED') ||
-        errMsg.includes('UNAUTHENTICATED') ||
-        errMsg.includes('credentials')
-      ) {
+      if (isCredentialOrPermissionError(err)) {
         isUsingFallback = true;
+      } else {
+        throw err;
       }
     }
   }
@@ -89,10 +164,10 @@ export async function checkIdempotentOrder(idempotencyKey?: string): Promise<Ord
 export async function recordNotificationJob(
   jobData: Record<string, unknown>
 ): Promise<string> {
-  const db = getAdminDb();
   const now = new Date().toISOString();
 
-  if (!isUsingFallback) {
+  if (!shouldUseLocalFallback()) {
+    const db = getAdminDb();
     try {
       const jobRef = db.collection('notificationJobs').doc();
       await jobRef.set({
@@ -101,12 +176,7 @@ export async function recordNotificationJob(
       });
       return jobRef.id;
     } catch (err: unknown) {
-      const errMsg = err instanceof Error ? err.message : String(err);
-      if (
-        errMsg.includes('PERMISSION_DENIED') ||
-        errMsg.includes('UNAUTHENTICATED') ||
-        errMsg.includes('credentials')
-      ) {
+      if (isCredentialOrPermissionError(err)) {
         isUsingFallback = true;
       }
     }
@@ -128,10 +198,9 @@ export async function saveOrderAtomic(
   order: OrderRecord,
   settlementData: any
 ): Promise<{ success: boolean; error?: string }> {
-  const db = getAdminDb();
-
-  // Try live Firestore first
-  if (!isUsingFallback) {
+  // Try live Firestore first when configured
+  if (!shouldUseLocalFallback()) {
+    const db = getAdminDb();
     try {
       await db.runTransaction(async (transaction: any) => {
         // Inventory checks
@@ -178,12 +247,7 @@ export async function saveOrderAtomic(
       return { success: true };
     } catch (err: unknown) {
       const errMsg = err instanceof Error ? err.message : String(err);
-      if (
-        errMsg.includes('PERMISSION_DENIED') ||
-        errMsg.includes('UNAUTHENTICATED') ||
-        errMsg.includes('credentials') ||
-        errMsg.includes('could not find default credentials')
-      ) {
+      if (isCredentialOrPermissionError(err)) {
         console.warn(
           '[Dev Notice]: Firestore Admin credentials pending in local dev environment. Operating in resilient local storage mode. In production on Vercel, set FIREBASE_CLIENT_EMAIL and FIREBASE_PRIVATE_KEY.'
         );
@@ -199,7 +263,10 @@ export async function saveOrderAtomic(
 
   for (const item of order.items) {
     const variantId = `${item.colorway}_${item.size}`;
-    const inv = store.inventory[variantId] || { availableStock: 5, totalStock: 5 };
+    const defaultEntry = DEFAULT_INVENTORY[variantId] || { availableStock: 5, totalStock: 5 };
+    const inv = store.inventory[variantId]
+      ? { ...store.inventory[variantId] }
+      : { ...defaultEntry };
     if (inv.availableStock < item.quantity) {
       return {
         success: false,
@@ -218,9 +285,8 @@ export async function saveOrderAtomic(
 }
 
 export async function fetchAllOrders(): Promise<OrderRecord[]> {
-  const db = getAdminDb();
-
-  if (!isUsingFallback) {
+  if (!shouldUseLocalFallback()) {
+    const db = getAdminDb();
     try {
       const snapshot = await db.collection('orders').orderBy('createdAt', 'desc').get();
       const list: OrderRecord[] = [];
@@ -229,9 +295,10 @@ export async function fetchAllOrders(): Promise<OrderRecord[]> {
       });
       return list;
     } catch (err: unknown) {
-      const errMsg = err instanceof Error ? err.message : String(err);
-      if (errMsg.includes('PERMISSION_DENIED') || errMsg.includes('UNAUTHENTICATED')) {
+      if (isCredentialOrPermissionError(err)) {
         isUsingFallback = true;
+      } else {
+        throw err;
       }
     }
   }
@@ -248,9 +315,8 @@ export async function updateOrderRecord(
   adminEmail: string,
   note?: string
 ): Promise<{ success: boolean; order?: OrderRecord; error?: string }> {
-  const db = getAdminDb();
-
-  if (!isUsingFallback) {
+  if (!shouldUseLocalFallback()) {
+    const db = getAdminDb();
     try {
       const orderRef = db.collection('orders').doc(orderId);
       let updated: OrderRecord | null = null;
@@ -291,7 +357,7 @@ export async function updateOrderRecord(
       return { success: true, order: updated || undefined };
     } catch (err: unknown) {
       const errMsg = err instanceof Error ? err.message : String(err);
-      if (errMsg.includes('PERMISSION_DENIED') || errMsg.includes('UNAUTHENTICATED')) {
+      if (isCredentialOrPermissionError(err)) {
         isUsingFallback = true;
       } else {
         return { success: false, error: errMsg };
@@ -300,33 +366,39 @@ export async function updateOrderRecord(
   }
 
   const store = readLocalStore();
-  const existing = store.orders[orderId];
-  if (!existing) return { success: false, error: 'Order not found in local store' };
+  const matchedOrder =
+    store.orders[orderId] ||
+    Object.values(store.orders).find((o) => o.orderReference === orderId);
+  if (!matchedOrder) return { success: false, error: 'Order not found in local store' };
 
+  const targetKey = matchedOrder.id;
   const now = new Date().toISOString();
-  if (newStatus === 'CANCELLED' && existing.orderStatus !== 'CANCELLED') {
-    for (const item of existing.items) {
+  if (newStatus === 'CANCELLED' && matchedOrder.orderStatus !== 'CANCELLED') {
+    for (const item of matchedOrder.items) {
       const variantId = `${item.colorway}_${item.size}`;
-      if (store.inventory[variantId]) {
-        store.inventory[variantId].availableStock += item.quantity;
-      }
+      const defaultEntry = DEFAULT_INVENTORY[variantId] || { availableStock: 0, totalStock: 0 };
+      const existingInv = store.inventory[variantId] || { ...defaultEntry };
+      store.inventory[variantId] = {
+        ...existingInv,
+        availableStock: existingInv.availableStock + item.quantity,
+      };
     }
   }
 
-  existing.orderStatus = newStatus;
-  existing.statusHistory = existing.statusHistory || [];
-  existing.statusHistory.push({
+  matchedOrder.orderStatus = newStatus;
+  matchedOrder.statusHistory = matchedOrder.statusHistory || [];
+  matchedOrder.statusHistory.push({
     status: newStatus,
     note: note || `Status updated to ${newStatus}`,
     updatedBy: adminEmail,
     timestamp: now,
   });
-  existing.updatedAt = now;
+  matchedOrder.updatedAt = now;
 
-  store.orders[orderId] = existing;
+  store.orders[targetKey] = matchedOrder;
   writeLocalStore(store);
 
-  return { success: true, order: existing };
+  return { success: true, order: matchedOrder };
 }
 
 export async function reconcileCodRecord(
@@ -334,9 +406,8 @@ export async function reconcileCodRecord(
   settlementData: any,
   adminEmail: string
 ): Promise<{ success: boolean; error?: string }> {
-  const db = getAdminDb();
-
-  if (!isUsingFallback) {
+  if (!shouldUseLocalFallback()) {
+    const db = getAdminDb();
     try {
       const settlementRef = db.collection('codSettlements').doc(orderId);
       const orderRef = db.collection('orders').doc(orderId);
@@ -377,7 +448,7 @@ export async function reconcileCodRecord(
       return { success: true };
     } catch (err: unknown) {
       const errMsg = err instanceof Error ? err.message : String(err);
-      if (errMsg.includes('PERMISSION_DENIED') || errMsg.includes('UNAUTHENTICATED')) {
+      if (isCredentialOrPermissionError(err)) {
         isUsingFallback = true;
       } else {
         return { success: false, error: errMsg };
@@ -386,9 +457,12 @@ export async function reconcileCodRecord(
   }
 
   const store = readLocalStore();
-  const order = store.orders[orderId];
+  const order =
+    store.orders[orderId] ||
+    Object.values(store.orders).find((o) => o.orderReference === orderId);
   if (!order) return { success: false, error: 'Order not found in local store' };
 
+  const targetKey = order.id;
   let paymentStatus: OrderRecord['paymentStatus'] = 'UNPAID';
   if (settlementData.settlementStatus === 'REMITTED_TO_BANK') {
     paymentStatus = 'REMITTED';
@@ -400,9 +474,9 @@ export async function reconcileCodRecord(
   const outstanding = Math.max(0, expected - settlementData.amountRemittedEur);
   const now = new Date().toISOString();
 
-  store.codSettlements[orderId] = {
+  store.codSettlements[targetKey] = {
     ...settlementData,
-    orderId,
+    orderId: targetKey,
     orderReference: order.orderReference,
     expectedAmountEur: expected,
     outstandingAmountEur: outstanding,
@@ -412,39 +486,47 @@ export async function reconcileCodRecord(
 
   order.paymentStatus = paymentStatus;
   order.updatedAt = now;
-  store.orders[orderId] = order;
+  store.orders[targetKey] = order;
 
   writeLocalStore(store);
   return { success: true };
 }
 
 export async function getOrderById(orderId: string): Promise<OrderRecord | null> {
-  const db = getAdminDb();
-  if (!isUsingFallback) {
+  if (!shouldUseLocalFallback()) {
+    const db = getAdminDb();
     try {
       const doc = await db.collection('orders').doc(orderId).get();
       if (doc.exists) {
         return { id: doc.id, ...doc.data() } as OrderRecord;
       }
-    } catch {
-      // Fallback
+    } catch (err: unknown) {
+      if (isCredentialOrPermissionError(err)) {
+        isUsingFallback = true;
+      }
     }
   }
 
   const store = readLocalStore();
-  return store.orders[orderId] || null;
+  return (
+    store.orders[orderId] ||
+    Object.values(store.orders).find((o) => o.orderReference === orderId) ||
+    null
+  );
 }
 
 export async function getNotificationJobsForOrder(orderId: string): Promise<any[]> {
-  const db = getAdminDb();
-  if (!isUsingFallback) {
+  if (!shouldUseLocalFallback()) {
+    const db = getAdminDb();
     try {
       const snap = await db.collection('notificationJobs').where('orderId', '==', orderId).get();
       const list: any[] = [];
       snap.forEach((d: any) => list.push({ id: d.id, ...d.data() }));
       return list;
-    } catch {
-      // Fallback
+    } catch (err: unknown) {
+      if (isCredentialOrPermissionError(err)) {
+        isUsingFallback = true;
+      }
     }
   }
 
