@@ -1,8 +1,10 @@
-import crypto from 'crypto';
+import crypto from 'node:crypto';
 import { initializeApp, getApps, cert, App } from 'firebase-admin/app';
 import { getFirestore, Firestore } from 'firebase-admin/firestore';
 import { getAuth, Auth } from 'firebase-admin/auth';
-import firebaseConfig from '../../firebase-applet-config.json';
+
+const DEFAULT_PROJECT_ID = 'gen-lang-client-0299720065';
+const DEFAULT_FIRESTORE_DATABASE_ID = 'ai-studio-noirscrolldriven-f315def4-d182-4618-969f-6da452cde3b7';
 
 let adminApp: App | null = null;
 
@@ -56,7 +58,7 @@ export function getAdminApp(): App {
     return adminApp;
   }
 
-  const projectId = process.env.FIREBASE_PROJECT_ID || firebaseConfig.projectId;
+  const projectId = process.env.FIREBASE_PROJECT_ID || DEFAULT_PROJECT_ID;
 
   // 1. Full JSON Service Account Key string in env
   if (process.env.FIREBASE_SERVICE_ACCOUNT_KEY) {
@@ -125,7 +127,7 @@ export function getAdminDb(): Firestore {
   if (cachedDb) return cachedDb;
 
   const app = getAdminApp();
-  const dbId = process.env.FIRESTORE_DATABASE_ID || firebaseConfig.firestoreDatabaseId;
+  const dbId = process.env.FIRESTORE_DATABASE_ID || DEFAULT_FIRESTORE_DATABASE_ID;
   
   if (dbId && dbId !== '(default)') {
     try {
