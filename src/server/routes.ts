@@ -1,5 +1,5 @@
 import { Router, Request, Response } from 'express';
-import { createOrder } from './orders-service';
+import { createOrder } from './orders-service.js';
 import {
   verifyAdminRequest,
   getAdminDashboardStats,
@@ -9,10 +9,10 @@ import {
   ADMIN_ALLOWLIST,
   ADMIN_CONFIGURED_PASSWORD,
   createAdminSessionToken,
-} from './admin-service';
-import { isPlaceholderEnvValue } from './firebase-admin';
-import { getInventorySnapshot } from './storage-store';
-import { createRateLimiter } from './rate-limiter';
+} from './admin-service.js';
+import { isPlaceholderEnvValue } from './firebase-admin.js';
+import { getInventorySnapshot } from './storage-store.js';
+import { createRateLimiter } from './rate-limiter.js';
 
 export const apiRouter = Router();
 
@@ -264,8 +264,8 @@ apiRouter.get('/admin/email-status', requireAdmin, async (_req: Request, res: Re
 apiRouter.post('/admin/orders/:id/resend-email', requireAdmin, async (req: Request, res: Response) => {
   try {
     const { id } = req.params;
-    const { getOrderById, getNotificationJobsForOrder } = await import('./storage-store');
-    const { resendCustomerEmail } = await import('./notifications');
+    const { getOrderById, getNotificationJobsForOrder } = await import('./storage-store.js');
+    const { resendCustomerEmail } = await import('./notifications.js');
 
     const order = await getOrderById(id);
     if (!order) {

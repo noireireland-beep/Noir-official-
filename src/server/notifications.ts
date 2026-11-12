@@ -1,7 +1,7 @@
 import { Resend } from 'resend';
-import { generateCustomerEmail, generateAdminEmail, OrderEmailData } from './email-templates';
-import { isPlaceholderEnvValue } from './firebase-admin';
-import { recordNotificationJob } from './storage-store';
+import { generateCustomerEmail, generateAdminEmail, type OrderEmailData } from './email-templates.js';
+import { isPlaceholderEnvValue } from './firebase-admin.js';
+import { recordNotificationJob } from './storage-store.js';
 
 const ADMIN_EMAIL = 'noire.ireland@gmail.com';
 const DEFAULT_FROM_EMAIL = 'Atelier NOIRÉ <onboarding@resend.dev>';

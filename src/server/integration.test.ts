@@ -7,10 +7,10 @@ import {
   validateEircode,
   validateEmail,
   sanitizeString
-} from './validation';
-import { generateCustomerEmail, generateAdminEmail } from './email-templates';
-import { ADMIN_ALLOWLIST } from './admin-service';
-import { createRateLimiter } from './rate-limiter';
+} from './validation.js';
+import { generateCustomerEmail, generateAdminEmail } from './email-templates.js';
+import { ADMIN_ALLOWLIST } from './admin-service.js';
+import { createRateLimiter } from './rate-limiter.js';
 
 // Mock order for deterministic integration assertions
 const sampleOrderPayload = {
@@ -455,3 +455,173 @@ test('16. Local store fallback handles inventory, order idempotency, cancellatio
     }
   }
 });
+
+test('17. Vercel /api handlers work for admin login, catch-all routing, stats, orders, and inventory', async () => {
+  const fs = await import('node:fs');
+  const path = await import('node:path');
+  const storeFile = path.resolve(process.cwd(), '.local-store.json');
+  const hadPrevious = fs.existsSync(storeFile);
+  const previousRaw = hadPrevious ? fs.readFileSync(storeFile, 'utf8') : null;
+
+  const createMockVercelRes = () => {
+    const headers: Record<string, string> = {};
+    let body = '';
+    const mock = {
+      statusCode: 200,
+      headersSent: false,
+      setHeader(k: string, v: string) {
+        headers[k.toLowerCase()] = String(v);
+      },
+      getHeader(k: string) {
+        return headers[k.toLowerCase()];
+      },
+      status(code: number) {
+        mock.statusCode = code;
+        return mock;
+      },
+      json(payload: unknown) {
+        headers['content-type'] = 'application/json; charset=utf-8';
+        body = JSON.stringify(payload);
+        mock.headersSent = true;
+        return mock;
+      },
+      end(chunk?: string | Buffer) {
+        if (chunk) {
+          body += Buffer.isBuffer(chunk) ? chunk.toString('utf8') : String(chunk);
+        }
+        mock.headersSent = true;
+        return mock;
+      },
+      parseJson() {
+        return body ? JSON.parse(body) : null;
+      },
+    };
+    return mock;
+  };
+
+  try {
+    if (hadPrevious) fs.unlinkSync(storeFile);
+
+    const catchAllHandler = (await import('../../api/[...route].js')).default;
+    const statsHandler = (await import('../../api/admin/stats.js')).default;
+    const ordersHandler = (await import('../../api/admin/orders.js')).default;
+    const statusHandler = (await import('../../api/admin/status.js')).default;
+    const reconcileHandler = (await import('../../api/admin/reconcile.js')).default;
+    const inventoryHandler = (await import('../../api/inventory.js')).default;
+    const { ADMIN_CONFIGURED_PASSWORD } = await import('./admin-service.js');
+
+    // OPTIONS preflight on catch-all
+    const optRes = createMockVercelRes();
+    await catchAllHandler({ method: 'OPTIONS', url: '/api/admin/login', headers: {}, query: {} } as any, optRes as any);
+    assert.equal(optRes.statusCode, 204);
+
+    // Wrong password rejected cleanly as JSON 401
+    const badLoginRes = createMockVercelRes();
+    await catchAllHandler(
+      {
+        method: 'POST',
+        url: '/api/admin/login',
+        headers: { 'content-type': 'application/json' },
+        query: {},
+        body: { email: 'noire.ireland@gmail.com', password: 'wrong-password' },
+      } as any,
+      badLoginRes as any
+    );
+    assert.equal(badLoginRes.statusCode, 401);
+    assert.equal(badLoginRes.parseJson().success, false);
+    assert.equal(badLoginRes.parseJson().field, 'password');
+
+    // Valid login via encoded Vercel catch-all URL + [...route] query
+    const goodLoginRes = createMockVercelRes();
+    await catchAllHandler(
+      {
+        method: 'POST',
+        url: '/api/%5B...route%5D?...route=admin&...route=login',
+        headers: { 'content-type': 'application/json' },
+        query: { '...route': ['admin', 'login'] },
+        body: Buffer.from(JSON.stringify({ email: 'noire.ireland@gmail.com', password: ADMIN_CONFIGURED_PASSWORD })),
+      } as any,
+      goodLoginRes as any
+    );
+    assert.equal(goodLoginRes.statusCode, 200);
+    const loginData = goodLoginRes.parseJson();
+    assert.equal(loginData.success, true);
+    assert.ok(typeof loginData.token === 'string' && loginData.token.startsWith('an_'));
+
+    const token = loginData.token as string;
+
+    // Unauthenticated request to /api/admin/stats -> 401
+    const unauthStatsRes = createMockVercelRes();
+    await statsHandler({ method: 'GET', headers: {} } as any, unauthStatsRes as any);
+    assert.equal(unauthStatsRes.statusCode, 401);
+
+    // Authenticated /api/admin/stats -> 200 JSON
+    const statsRes = createMockVercelRes();
+    await statsHandler({ method: 'GET', headers: { authorization: `Bearer ${token}` } } as any, statsRes as any);
+    assert.equal(statsRes.statusCode, 200);
+    assert.equal(statsRes.parseJson().success, true);
+    assert.equal(typeof statsRes.parseJson().stats.totalOrders, 'number');
+
+    // Authenticated /api/admin/orders -> 200 JSON
+    const ordersRes = createMockVercelRes();
+    await ordersHandler(
+      { method: 'GET', url: '/api/admin/orders', headers: { authorization: `Bearer ${token}` } } as any,
+      ordersRes as any
+    );
+    assert.equal(ordersRes.statusCode, 200);
+    assert.equal(ordersRes.parseJson().success, true);
+    assert.ok(Array.isArray(ordersRes.parseJson().orders));
+
+    // Authenticated /api/admin/email-status via catch-all -> 200 JSON
+    const emailStatusRes = createMockVercelRes();
+    await catchAllHandler(
+      {
+        method: 'GET',
+        url: '/api/admin/email-status',
+        headers: { authorization: `Bearer ${token}` },
+        query: {},
+      } as any,
+      emailStatusRes as any
+    );
+    assert.equal(emailStatusRes.statusCode, 200);
+    assert.equal(emailStatusRes.parseJson().success, true);
+
+    // Authenticated /api/inventory -> 200 JSON
+    const invRes = createMockVercelRes();
+    await inventoryHandler({ method: 'GET' } as any, invRes as any);
+    assert.equal(invRes.statusCode, 200);
+    assert.equal(invRes.parseJson().success, true);
+
+    // Verify status & reconcile validation paths respond cleanly in JSON
+    const statusMissingRes = createMockVercelRes();
+    await statusHandler(
+      {
+        method: 'PATCH',
+        url: '/api/admin/status',
+        headers: { authorization: `Bearer ${token}` },
+        body: Buffer.from(JSON.stringify({ status: 'CONFIRMED' })),
+      } as any,
+      statusMissingRes as any
+    );
+    assert.equal(statusMissingRes.statusCode, 400);
+
+    const reconcileMissingRes = createMockVercelRes();
+    await reconcileHandler(
+      {
+        method: 'POST',
+        url: '/api/admin/reconcile',
+        headers: { authorization: `Bearer ${token}` },
+        body: Buffer.from(JSON.stringify({ courierName: 'DHL' })),
+      } as any,
+      reconcileMissingRes as any
+    );
+    assert.equal(reconcileMissingRes.statusCode, 400);
+  } finally {
+    if (hadPrevious && previousRaw !== null) {
+      fs.writeFileSync(storeFile, previousRaw, 'utf8');
+    } else if (fs.existsSync(storeFile)) {
+      fs.unlinkSync(storeFile);
+    }
+  }
+});
+

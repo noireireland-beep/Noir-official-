@@ -5,8 +5,8 @@ import {
   getAdminDb,
   hasValidServiceAccountCredentials,
   isCredentialOrPermissionError,
-} from './firebase-admin';
-import { OrderRecord } from './orders-service';
+} from './firebase-admin.js';
+import type { OrderRecord } from './orders-service.js';
 
 const LOCAL_DB_PATH = path.resolve(process.cwd(), '.local-store.json');
 const TMP_DB_PATH = path.join(os.tmpdir(), 'atelier-noire-local-store.json');

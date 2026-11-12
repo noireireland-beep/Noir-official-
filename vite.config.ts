@@ -1,9 +1,12 @@
 import {execFileSync} from 'node:child_process';
 import fs from 'node:fs';
+import path from 'node:path';
+import {fileURLToPath} from 'node:url';
 import tailwindcss from '@tailwindcss/vite';
 import react from '@vitejs/plugin-react';
-import path from 'path';
 import {defineConfig, type Plugin} from 'vite';
+
+const rootDir = path.dirname(fileURLToPath(import.meta.url));
 
 function vercelApiDevPlugin(): Plugin {
   return {
@@ -32,7 +35,9 @@ function vercelApiDevPlugin(): Plugin {
           res.setHeader('Content-Length', String(stat.size));
           fs.createReadStream(zipPath).pipe(res);
         } catch (err) {
-          next(err);
+          if (!res.writableEnded) {
+            next(err);
+          }
         }
       });
 
@@ -92,7 +97,13 @@ function vercelApiDevPlugin(): Plugin {
               if (typeof payload === 'object' && payload !== null && !Buffer.isBuffer(payload)) {
                 return vercelRes.json(payload);
               }
-              res.end(payload);
+              if (payload === undefined || payload === null) {
+                res.end();
+              } else if (Buffer.isBuffer(payload) || typeof payload === 'string') {
+                res.end(payload);
+              } else {
+                res.end(String(payload));
+              }
               return vercelRes;
             },
           });
@@ -107,7 +118,9 @@ function vercelApiDevPlugin(): Plugin {
           const catchAll = await server.ssrLoadModule('/api/[...route].ts');
           await catchAll.default(vercelReq, vercelRes);
         } catch (err) {
-          next(err);
+          if (!res.writableEnded) {
+            next(err);
+          }
         }
       });
     },
@@ -119,12 +132,13 @@ export default defineConfig(() => {
     plugins: [react(), tailwindcss(), vercelApiDevPlugin()],
     resolve: {
       alias: {
-        '@': path.resolve(__dirname, '.'),
+        '@': path.resolve(rootDir, '.'),
       },
     },
     server: {
       port: 3000,
       host: '0.0.0.0',
+      allowedHosts: true,
       // HMR is disabled in AI Studio via DISABLE_HMR env var.
       // Do not modify—file watching is disabled to prevent flickering during agent edits.
       hmr: process.env.DISABLE_HMR !== 'true',

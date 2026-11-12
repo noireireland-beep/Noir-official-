@@ -1,11 +1,11 @@
 import crypto from 'crypto';
-import { getAdminDb, getAdminAuth } from './firebase-admin';
-import { OrderRecord } from './orders-service';
+import { getAdminDb, getAdminAuth } from './firebase-admin.js';
+import type { OrderRecord } from './orders-service.js';
 import {
   fetchAllOrders,
   updateOrderRecord,
   reconcileCodRecord,
-} from './storage-store';
+} from './storage-store.js';
 
 export const ADMIN_ALLOWLIST = ['noire.ireland@gmail.com'];
 export const ADMIN_CONFIGURED_PASSWORD = 'finalrun911';

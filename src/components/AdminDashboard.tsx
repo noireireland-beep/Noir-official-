@@ -1,13 +1,55 @@
 import React, { useState, useEffect } from 'react';
 import {
-  signInWithEmailAndPassword,
-  createUserWithEmailAndPassword,
   signOut,
   onAuthStateChanged,
-  User
+  type User
 } from 'firebase/auth';
 import { auth } from '../lib/firebase';
-import { OrderRecord } from '../server/orders-service';
+import type { OrderRecord } from '../server/orders-service';
+
+function readSessionStorage(key: string): string | null {
+  try {
+    return window.sessionStorage.getItem(key);
+  } catch {
+    return null;
+  }
+}
+
+function writeSessionStorage(key: string, value: string): void {
+  try {
+    window.sessionStorage.setItem(key, value);
+  } catch {
+    // Ignore storage restriction errors in hardened/private contexts
+  }
+}
+
+function removeSessionStorage(key: string): void {
+  try {
+    window.sessionStorage.removeItem(key);
+  } catch {
+    // Ignore storage restriction errors
+  }
+}
+
+async function parseJsonResponse(res: Response): Promise<{
+  ok: boolean;
+  data: Record<string, any> | null;
+  rawText: string;
+}> {
+  const rawText = await res.text();
+  if (!rawText) {
+    return { ok: false, data: null, rawText: '' };
+  }
+  try {
+    const parsed = JSON.parse(rawText);
+    if (parsed && typeof parsed === 'object') {
+      return { ok: true, data: parsed as Record<string, any>, rawText };
+    }
+    return { ok: false, data: null, rawText };
+  } catch {
+    return { ok: false, data: null, rawText };
+  }
+}
 
 interface DashboardStats {
   totalOrders: number;
@@ -31,12 +73,21 @@ interface AdminSession {
 
 export const AdminDashboard: React.FC = () => {
   const [user, setUser] = useState<User | null>(null);
-  const [adminSession, setAdminSession] = useState<AdminSession | null>(null);
+  const [adminSession, setAdminSession] = useState<AdminSession | null>(() => {
+    if (typeof window === 'undefined') return null;
+    const savedToken = readSessionStorage('noire_admin_token');
+    const savedEmail = readSessionStorage('noire_admin_email');
+    if (savedToken && savedEmail) {
+      return { token: savedToken, email: savedEmail, role: 'SUPER_ADMIN' };
+    }
+    return null;
+  });
   const [authLoading, setAuthLoading] = useState<boolean>(true);
   const [loginEmail, setLoginEmail] = useState<string>('noire.ireland@gmail.com');
   const [loginPassword, setLoginPassword] = useState<string>('');
   const [fieldErrors, setFieldErrors] = useState<{ email?: string; password?: string }>({});
   const [isAuthorizing, setIsAuthorizing] = useState<boolean>(false);
+  const [dashboardError, setDashboardError] = useState<string | null>(null);
 
   // Active admin check
   const activeAdmin = adminSession || user;
@@ -111,9 +162,9 @@ export const AdminDashboard: React.FC = () => {
 
   // Restore session token and listen to Firebase auth
   useEffect(() => {
-    const savedToken = sessionStorage.getItem('noire_admin_token');
-    const savedEmail = sessionStorage.getItem('noire_admin_email');
-    if (savedToken && savedEmail) {
+    const savedToken = readSessionStorage('noire_admin_token');
+    const savedEmail = readSessionStorage('noire_admin_email');
+    if (savedToken && savedEmail && !adminSession) {
       setAdminSession({
         token: savedToken,
         email: savedEmail,
@@ -121,17 +172,33 @@ export const AdminDashboard: React.FC = () => {
       });
     }
 
-    const unsubscribe = onAuthStateChanged(auth, (currentUser) => {
-      setUser(currentUser);
+    const fallbackTimer = setTimeout(() => {
       setAuthLoading(false);
-    });
-    return () => unsubscribe();
+    }, 1500);
+
+    const unsubscribe = onAuthStateChanged(
+      auth,
+      (currentUser) => {
+        clearTimeout(fallbackTimer);
+        setUser(currentUser);
+        setAuthLoading(false);
+      },
+      () => {
+        clearTimeout(fallbackTimer);
+        setAuthLoading(false);
+      }
+    );
+    return () => {
+      clearTimeout(fallbackTimer);
+      unsubscribe();
+    };
   }, []);
 
   // Fetch Dashboard Data once authenticated
   const fetchDashboardData = async () => {
     if (!activeAdmin) return;
     setIsLoadingOrders(true);
+    setDashboardError(null);
 
     try {
       const token = await getAuthToken();
@@ -140,21 +207,30 @@ export const AdminDashboard: React.FC = () => {
         'Content-Type': 'application/json',
       };
 
+      const errors: string[] = [];
+
       // 1. Fetch Stats
       const statsRes = await fetch('/api/admin/stats', { headers });
       if (statsRes.status === 401 || statsRes.status === 403) {
         if (adminSession?.token) {
-          sessionStorage.removeItem('noire_admin_token');
-          sessionStorage.removeItem('noire_admin_email');
+          removeSessionStorage('noire_admin_token');
+          removeSessionStorage('noire_admin_email');
           setAdminSession(null);
+          return;
         }
+        const authParsed = await parseJsonResponse(statsRes);
+        setDashboardError(authParsed.data?.error || 'Administrator authorization expired or denied.');
         return;
       }
-      if (statsRes.ok) {
-        const statsData = await statsRes.json();
-        if (statsData.success) {
-          setStats(statsData.stats);
-        }
+
+      const statsParsed = await parseJsonResponse(statsRes);
+      if (statsRes.ok && statsParsed.ok && statsParsed.data?.success) {
+        setStats(statsParsed.data.stats);
+      } else {
+        errors.push(
+          statsParsed.data?.error ||
+            `Stats API error (HTTP ${statsRes.status}). Verify Vercel API deployment.`
+        );
       }
 
       // 2. Fetch Orders
@@ -166,33 +242,43 @@ export const AdminDashboard: React.FC = () => {
       const ordersRes = await fetch(`/api/admin/orders?${params.toString()}`, { headers });
       if (ordersRes.status === 401 || ordersRes.status === 403) {
         if (adminSession?.token) {
-          sessionStorage.removeItem('noire_admin_token');
-          sessionStorage.removeItem('noire_admin_email');
+          removeSessionStorage('noire_admin_token');
+          removeSessionStorage('noire_admin_email');
           setAdminSession(null);
+          return;
         }
+        const authParsed = await parseJsonResponse(ordersRes);
+        setDashboardError(authParsed.data?.error || 'Administrator authorization expired or denied.');
         return;
       }
-      if (ordersRes.ok) {
-        const ordersData = await ordersRes.json();
-        if (ordersData.success) {
-          setOrders(ordersData.orders || []);
-        }
+
+      const ordersParsed = await parseJsonResponse(ordersRes);
+      if (ordersRes.ok && ordersParsed.ok && ordersParsed.data?.success) {
+        setOrders(ordersParsed.data.orders || []);
+      } else {
+        errors.push(
+          ordersParsed.data?.error ||
+            `Orders API error (HTTP ${ordersRes.status}). Verify Vercel API deployment.`
+        );
+      }
+
+      if (errors.length > 0) {
+        setDashboardError(errors[0]);
       }
 
       // 3. Fetch Email Service Health
       try {
         const emailRes = await fetch('/api/admin/email-status', { headers });
-        if (emailRes.ok) {
-          const emailData = await emailRes.json();
-          if (emailData.success) {
-            setEmailServiceStatus(emailData);
-          }
+        const emailParsed = await parseJsonResponse(emailRes);
+        if (emailRes.ok && emailParsed.ok && emailParsed.data?.success) {
+          setEmailServiceStatus(emailParsed.data as { hasApiKey: boolean; fromEmail: string; isCustomDomain: boolean; mode: string });
         }
       } catch {
         // Non-blocking
       }
     } catch (err) {
       console.error('Error fetching admin dashboard data:', err);
+      setDashboardError('Unable to reach the admin API endpoints. Check network connectivity and verify /api routes are deployed.');
     } finally {
       setIsLoadingOrders(false);
     }
@@ -210,8 +296,9 @@ export const AdminDashboard: React.FC = () => {
           'Content-Type': 'application/json',
         },
       });
-      const data = await res.json();
-      if (res.ok && data.success) {
+      const parsed = await parseJsonResponse(res);
+      const data = parsed.data;
+      if (res.ok && data?.success) {
         setResendNotificationResult({
           success: true,
           message: data.status === 'SENT'
@@ -221,7 +308,7 @@ export const AdminDashboard: React.FC = () => {
       } else {
         setResendNotificationResult({
           success: false,
-          message: data.error || 'Failed to dispatch email.',
+          message: data?.error || `Failed to dispatch email (HTTP ${res.status}).`,
         });
       }
     } catch (err: unknown) {
@@ -276,36 +363,47 @@ export const AdminDashboard: React.FC = () => {
         }),
       });
 
-      const data = await res.json();
+      const parsed = await parseJsonResponse(res);
+      if (!parsed.ok || !parsed.data) {
+        setFieldErrors({
+          password: `Server error (HTTP ${res.status}): /api/admin/login returned an invalid response. Check Vercel deployment and environment variables.`,
+        });
+        return;
+      }
+
+      const data = parsed.data;
       if (!res.ok || !data.success) {
         if (data.field === 'email') {
           setFieldErrors({ email: data.error || 'Unrecognized email address.' });
         } else if (data.field === 'password') {
           setFieldErrors({ password: data.error || 'Incorrect security password.' });
         } else {
-          setFieldErrors({ password: data.error || 'Authentication failed.' });
+          setFieldErrors({ password: data.error || `Authentication failed (HTTP ${res.status}).` });
         }
         return;
       }
 
-      sessionStorage.setItem('noire_admin_token', data.token);
-      sessionStorage.setItem('noire_admin_email', data.user.email);
+      writeSessionStorage('noire_admin_token', data.token);
+      writeSessionStorage('noire_admin_email', data.user.email);
       setAdminSession({
         token: data.token,
         email: data.user.email,
         role: data.user.role || 'SUPER_ADMIN',
       });
     } catch {
-      setFieldErrors({ password: 'Connection failed. Please check network and retry.' });
+      setFieldErrors({
+        password: 'Unable to reach /api/admin/login. Check your internet connection or verify the API is deployed, then retry.',
+      });
     } finally {
       setIsAuthorizing(false);
     }
   };
 
   const handleSignOut = async () => {
-    sessionStorage.removeItem('noire_admin_token');
-    sessionStorage.removeItem('noire_admin_email');
+    removeSessionStorage('noire_admin_token');
+    removeSessionStorage('noire_admin_email');
     setAdminSession(null);
+    setDashboardError(null);
     try {
       await signOut(auth);
     } catch {
@@ -334,8 +432,9 @@ export const AdminDashboard: React.FC = () => {
         }),
       });
 
-      const data = await res.json();
-      if (res.ok && data.success) {
+      const parsed = await parseJsonResponse(res);
+      const data = parsed.data;
+      if (res.ok && data?.success) {
         setStatusUpdateNote('');
         setSelectedOrder(data.order);
         setStatusUpdateResult({
@@ -346,7 +445,7 @@ export const AdminDashboard: React.FC = () => {
       } else {
         setStatusUpdateResult({
           success: false,
-          message: data.error || 'Failed to update status.',
+          message: data?.error || `Failed to update status (HTTP ${res.status}).`,
         });
       }
     } catch (err: unknown) {
@@ -385,8 +484,9 @@ export const AdminDashboard: React.FC = () => {
         }),
       });
 
-      const data = await res.json();
-      if (res.ok && data.success) {
+      const parsed = await parseJsonResponse(res);
+      const data = parsed.data;
+      if (res.ok && data?.success) {
         setReconcileResult({
           success: true,
           message: '✓ COD reconciliation recorded and verified.',
@@ -400,7 +500,7 @@ export const AdminDashboard: React.FC = () => {
       } else {
         setReconcileResult({
           success: false,
-          message: data.error || 'Failed to reconcile COD settlement.',
+          message: data?.error || `Failed to reconcile COD settlement (HTTP ${res.status}).`,
         });
       }
     } catch (err: unknown) {
@@ -415,7 +515,7 @@ export const AdminDashboard: React.FC = () => {
     }
   };
 
-  if (authLoading) {
+  if (authLoading && !adminSession) {
     return (
       <div className="min-h-screen bg-[#111111] text-[#D6CCBA] flex items-center justify-center font-mono-archive">
         <div className="text-center space-y-2">
@@ -568,6 +668,18 @@ export const AdminDashboard: React.FC = () => {
 
       {/* Main Workspace */}
       <div className="max-w-7xl mx-auto p-6 space-y-6">
+        {dashboardError && (
+          <div className="bg-red-950/50 border border-[#FF0800]/60 px-4 py-3 flex items-center justify-between gap-4 text-xs font-mono-archive text-red-200">
+            <span>{dashboardError}</span>
+            <button
+              type="button"
+              onClick={() => setDashboardError(null)}
+              className="px-2 py-0.5 border border-[#FF0800]/40 hover:border-white text-[10px] uppercase tracking-wider cursor-pointer"
+            >
+              Dismiss
+            </button>
+          </div>
+        )}
         {/* KPI Summary Cards */}
         {stats && (
           <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3">

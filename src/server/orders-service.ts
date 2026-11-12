@@ -1,13 +1,13 @@
 import crypto from 'crypto';
-import { getAdminDb } from './firebase-admin';
+import { getAdminDb } from './firebase-admin.js';
 import {
   validateCheckoutPayload,
   calculateAuthoritativeTotals,
-  CheckoutPayload
-} from './validation';
-import { dispatchOrderNotifications } from './notifications';
-import { OrderEmailData } from './email-templates';
-import { saveOrderAtomic, checkIdempotentOrder } from './storage-store';
+  type CheckoutPayload
+} from './validation.js';
+import { dispatchOrderNotifications } from './notifications.js';
+import type { OrderEmailData } from './email-templates.js';
+import { saveOrderAtomic, checkIdempotentOrder } from './storage-store.js';
 
 export interface OrderRecord {
   id: string;

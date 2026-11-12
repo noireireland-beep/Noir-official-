@@ -202,7 +202,9 @@ export function getAdminDb(): Firestore {
   if (cachedDb) return cachedDb;
 
   const app = getAdminApp();
-  const dbId = process.env.FIRESTORE_DATABASE_ID || DEFAULT_FIRESTORE_DATABASE_ID;
+  const dbId = !isPlaceholderEnvValue(process.env.FIRESTORE_DATABASE_ID)
+    ? process.env.FIRESTORE_DATABASE_ID!.trim()
+    : DEFAULT_FIRESTORE_DATABASE_ID;
   
   if (dbId && dbId !== '(default)') {
     try {

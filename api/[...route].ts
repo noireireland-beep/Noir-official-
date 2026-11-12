@@ -8,9 +8,16 @@ import {
   ADMIN_ALLOWLIST,
   ADMIN_CONFIGURED_PASSWORD,
   createAdminSessionToken,
-} from '../src/server/admin-service';
-import { isPlaceholderEnvValue } from '../src/server/firebase-admin';
-import { getInventorySnapshot } from '../src/server/storage-store';
+} from '../src/server/admin-service.js';
+import {
+  isPlaceholderEnvValue,
+} from '../src/server/firebase-admin.js';
+import {
+  getInventorySnapshot,
+  getOrderById,
+  getNotificationJobsForOrder,
+} from '../src/server/storage-store.js';
+import { resendCustomerEmail } from '../src/server/notifications.js';
 
 function setCorsHeaders(res: VercelResponse): void {
   res.setHeader('Access-Control-Allow-Origin', '*');
@@ -21,6 +28,13 @@ function setCorsHeaders(res: VercelResponse): void {
 
 function parseJsonBody(rawBody: unknown): Record<string, unknown> {
   if (!rawBody) return {};
+  if (Buffer.isBuffer(rawBody)) {
+    try {
+      return JSON.parse(rawBody.toString('utf8')) as Record<string, unknown>;
+    } catch {
+      return {};
+    }
+  }
   if (typeof rawBody === 'string') {
     try {
       return JSON.parse(rawBody) as Record<string, unknown>;
@@ -34,17 +48,46 @@ function parseJsonBody(rawBody: unknown): Record<string, unknown> {
   return {};
 }
 
+async function resolveRequestBody(req: VercelRequest): Promise<unknown> {
+  if (typeof req.body !== 'undefined') {
+    return req.body;
+  }
+  if (
+    req.method === 'GET' ||
+    req.method === 'HEAD' ||
+    req.method === 'OPTIONS' ||
+    req.readableEnded ||
+    typeof req[Symbol.asyncIterator] !== 'function'
+  ) {
+    return undefined;
+  }
+  const chunks: Buffer[] = [];
+  for await (const chunk of req) {
+    chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk));
+  }
+  return Buffer.concat(chunks).toString('utf8');
+}
+
 function getSubPath(req: VercelRequest): string {
   const rawUrl = (req.url || '').split('?')[0];
-  if (rawUrl.startsWith('/api')) {
+  const isCatchAllTemplatePath = /(\[|%5B)\.\.\.route(\]|%5D)/i.test(rawUrl);
+  if (rawUrl.startsWith('/api') && !isCatchAllTemplatePath) {
     return rawUrl.slice(4) || '/';
   }
-  const routeParam = req.query?.route;
-  if (Array.isArray(routeParam)) {
-    return '/' + routeParam.join('/');
+  const routeParam = req.query?.['...route'] ?? req.query?.route;
+  if (Array.isArray(routeParam) && routeParam.length > 0) {
+    const joined = routeParam
+      .map((segment) => String(segment).replace(/^\/+|\/+$/g, ''))
+      .filter(Boolean)
+      .join('/');
+    return joined ? `/${joined}` : '/';
   }
-  if (typeof routeParam === 'string' && routeParam.length > 0) {
-    return '/' + routeParam;
+  if (typeof routeParam === 'string' && routeParam.trim().length > 0) {
+    const normalized = routeParam.trim().replace(/^\/+/, '');
+    return normalized ? `/${normalized}` : '/';
+  }
+  if (rawUrl.startsWith('/api')) {
+    return rawUrl.slice(4) || '/';
   }
   return rawUrl || '/';
 }
@@ -73,7 +116,7 @@ export default async function handler(
 
     // ── POST /api/admin/login ─────────────────────────────────────────────────
     if (subPath === '/admin/login' && method === 'POST') {
-      const body = parseJsonBody(req.body);
+      const body = parseJsonBody(await resolveRequestBody(req));
       const normalizedEmail = String(body.email || '')
         .trim()
         .toLowerCase();
@@ -201,7 +244,7 @@ export default async function handler(
       const statusMatch = subPath.match(/^\/admin\/orders\/([^/]+)\/status$/);
       if (statusMatch && method === 'PATCH') {
         const orderId = decodeURIComponent(statusMatch[1]);
-        const body = parseJsonBody(req.body);
+        const body = parseJsonBody(await resolveRequestBody(req));
         const status = body.status as string | undefined;
         const note = typeof body.note === 'string' ? body.note : undefined;
 
@@ -232,7 +275,7 @@ export default async function handler(
       );
       if (reconcileMatch && method === 'POST') {
         const orderId = decodeURIComponent(reconcileMatch[1]);
-        const body = parseJsonBody(req.body);
+        const body = parseJsonBody(await resolveRequestBody(req));
 
         const result = await reconcileCodSettlement(
           orderId,
@@ -273,13 +316,6 @@ export default async function handler(
       );
       if (resendMatch && method === 'POST') {
         const orderId = decodeURIComponent(resendMatch[1]);
-        const { getOrderById, getNotificationJobsForOrder } = await import(
-          '../src/server/storage-store'
-        );
-        const { resendCustomerEmail } = await import(
-          '../src/server/notifications'
-        );
-
         const order = await getOrderById(orderId);
         if (!order) {
           res.status(404).json({ success: false, error: 'Order not found.' });
