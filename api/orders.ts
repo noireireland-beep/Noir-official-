@@ -1272,7 +1272,7 @@ export default async function handler(
     const host =
       (typeof req.headers['x-forwarded-host'] === 'string'
         ? req.headers['x-forwarded-host']
-        : req.headers.host) || 'atelier-noire.com';
+        : req.headers.host) || 'www.noireofficial.ie';
     const adminDashboardUrl = `${protocol}://${host}/admin`;
 
     await sendOrderEmailsSafely(

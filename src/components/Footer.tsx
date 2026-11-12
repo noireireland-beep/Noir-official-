@@ -309,6 +309,7 @@ const Footer: React.FC<FooterProps> = ({ onOpenCareModal }) => {
           <span className="nf-legal-sep" aria-hidden="true">•</span>
           <a
             href="/admin"
+            rel="nofollow"
             onClick={handleRegistryClick}
             className="nf-registry-link"
             title="Administrator Registry Login"

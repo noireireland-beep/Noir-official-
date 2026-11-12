@@ -3,8 +3,8 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
-    <title>Atelier NOIRÉ — Irish Designed Luxury Tracksuit | Limited Archive Drop 01</title>
-    <meta name="description" content="Atelier NOIRÉ is an independent luxury clothing label designed in Dublin, Ireland. Explore Archive Drop 01: 88 numbered heavyweight 390 GSM fleece tracksuit sets. Complimentary courier delivery across Ireland." />
+    <title>Atelier NOIRÉ | Irish Luxury Tracksuit — Archive Drop 01</title>
+    <meta name="description" content="Atelier NOIRÉ: Dublin-designed heavyweight 390 GSM loopback fleece tracksuits. Strictly 88 numbered sets worldwide with free courier delivery in Ireland." />
     
     <!-- Irish Regional & Semantic Meta -->
     <meta name="keywords" content="Atelier NOIRÉ, Irish clothing brands, Irish designed clothing, luxury tracksuit Ireland, Dublin fashion studio, heavyweight fleece tracksuit, premium streetwear Ireland, limited edition clothing Ireland" />
@@ -16,33 +16,30 @@
 
     <!-- Open Graph / Facebook / WhatsApp / iMessage -->
     <meta property="og:site_name" content="Atelier NOIRÉ" />
-    <meta property="og:type" content="product" />
-    <meta property="og:url" id="og-url-link" content="https://atelier-noire.com/" />
-    <meta property="og:title" content="Atelier NOIRÉ — Irish Designed Luxury Tracksuit | Limited Archive Drop 01" />
-    <meta property="og:description" content="Designed in Dublin, Ireland. Handcrafted 390 GSM loopback cotton tracksuit. Limited to 88 numbered sets in Noir and Blue Charcoal. Free insured delivery in Ireland." />
-    <meta property="og:image" content="https://atelier-noire.com/assets/aistudio/lock_in_color_details_designs_and_stitches_from_the_second_picture_clothing_reference_only_lock_in_s_969fe8a9-6386-42e6-a2f5-55ec499a4390_ba8ec28b.png" />
+    <meta property="og:type" content="website" />
+    <meta property="og:url" id="og-url-link" content="https://www.noireofficial.ie/" />
+    <meta property="og:title" content="Atelier NOIRÉ | Irish Luxury Tracksuit — Archive Drop 01" />
+    <meta property="og:description" content="Atelier NOIRÉ: Dublin-designed heavyweight 390 GSM loopback fleece tracksuits. Strictly 88 numbered sets worldwide with free courier delivery in Ireland." />
+    <meta property="og:image" content="https://www.noireofficial.ie/assets/aistudio/lock_in_color_details_designs_and_stitches_from_the_second_picture_clothing_reference_only_lock_in_s_969fe8a9-6386-42e6-a2f5-55ec499a4390_ba8ec28b.png" />
     <meta property="og:image:width" content="1200" />
     <meta property="og:image:height" content="1500" />
     <meta property="og:image:alt" content="Atelier NOIRÉ Archive Drop No. 01 Tracksuit — Noir / Carbon Set" />
     <meta property="og:locale" content="en_IE" />
-    <meta property="product:price:amount" content="88" />
-    <meta property="product:price:currency" content="EUR" />
 
     <!-- Twitter / X Card -->
     <meta name="twitter:card" content="summary_large_image" />
-    <meta name="twitter:title" content="Atelier NOIRÉ — Irish Designed Luxury Tracksuit" />
-    <meta name="twitter:description" content="Designed in Dublin, Ireland. 88 numbered sets worldwide. 390 GSM heavyweight loopback fleece. €88 with complimentary delivery across Ireland." />
-    <meta name="twitter:image" content="https://atelier-noire.com/assets/aistudio/lock_in_color_details_designs_and_stitches_from_the_second_picture_clothing_reference_only_lock_in_s_969fe8a9-6386-42e6-a2f5-55ec499a4390_ba8ec28b.png" />
+    <meta name="twitter:title" content="Atelier NOIRÉ | Irish Luxury Tracksuit — Archive Drop 01" />
+    <meta name="twitter:description" content="Atelier NOIRÉ: Dublin-designed heavyweight 390 GSM loopback fleece tracksuits. Strictly 88 numbered sets worldwide with free courier delivery in Ireland." />
+    <meta name="twitter:image" content="https://www.noireofficial.ie/assets/aistudio/lock_in_color_details_designs_and_stitches_from_the_second_picture_clothing_reference_only_lock_in_s_969fe8a9-6386-42e6-a2f5-55ec499a4390_ba8ec28b.png" />
     <meta name="twitter:image:alt" content="Atelier NOIRÉ Archive Drop No. 01 Set" />
 
     <meta name="theme-color" content="#161616" />
     <meta name="color-scheme" content="dark" />
     <meta name="robots" content="index, follow, max-image-preview:large, max-snippet:-1, max-video-preview:-1" />
-    <!-- Google Search Console HTML Tag Verification: replace content with your GSC verification token -->
-    <meta name="google-site-verification" content="YOUR_GSC_VERIFICATION_CODE" />
-    <link rel="canonical" id="canonical-link" href="https://atelier-noire.com/" />
+    <meta name="google-site-verification" content="imdtazUbaQTRWRBiTWJCkKQ9mmlljIRQ-EGdejdGMHg" />
+    <link rel="canonical" id="canonical-link" href="https://www.noireofficial.ie/" />
 
-    <!-- Dynamic Canonical & OpenGraph Host Synchronization -->
+    <!-- Dynamic Canonical & Admin Noindex Guard -->
     <script>
       (function() {
         try {
@@ -50,7 +47,10 @@
           var pathname = window.location.pathname;
           var canonical = document.getElementById('canonical-link');
           var ogUrl = document.getElementById('og-url-link');
-          if (origin && !origin.includes('localhost') && !pathname.startsWith('/admin')) {
+          if (pathname.startsWith('/admin')) {
+            var robotsMeta = document.querySelector('meta[name="robots"]');
+            if (robotsMeta) robotsMeta.setAttribute('content', 'noindex, nofollow');
+          } else if (origin && origin.indexOf('noireofficial.ie') !== -1) {
             var resolvedUrl = origin + '/';
             if (canonical) canonical.href = resolvedUrl;
             if (ogUrl) ogUrl.setAttribute('content', resolvedUrl);
@@ -66,13 +66,13 @@
       "@graph": [
         {
           "@type": "ClothingStore",
-          "@id": "https://atelier-noire.com/#organization",
+          "@id": "https://www.noireofficial.ie/#organization",
           "name": "Atelier NOIRÉ",
-          "alternateName": ["NOIRÉ", "Atelier Noire Ireland"],
-          "url": "https://atelier-noire.com",
+          "alternateName": ["NOIRÉ", "NOIRÉ Official", "Atelier Noire Ireland"],
+          "url": "https://www.noireofficial.ie/",
           "logo": {
             "@type": "ImageObject",
-            "url": "https://atelier-noire.com/assets/aistudio/edited-image-1793305524_ccd04284.png",
+            "url": "https://www.noireofficial.ie/assets/aistudio/edited-image-1793305524_ccd04284.png",
             "caption": "Atelier NOIRÉ Dublin Emblem"
           },
           "description": "Independent luxury clothing atelier designed in Dublin, Ireland. Specializing in limited, architectural garment editions with zero reissues.",
@@ -92,45 +92,45 @@
         },
         {
           "@type": "WebSite",
-          "@id": "https://atelier-noire.com/#website",
-          "url": "https://atelier-noire.com",
+          "@id": "https://www.noireofficial.ie/#website",
+          "url": "https://www.noireofficial.ie/",
           "name": "Atelier NOIRÉ",
           "publisher": {
-            "@id": "https://atelier-noire.com/#organization"
+            "@id": "https://www.noireofficial.ie/#organization"
           },
           "inLanguage": "en-IE"
         },
         {
           "@type": "BreadcrumbList",
-          "@id": "https://atelier-noire.com/#breadcrumbs",
+          "@id": "https://www.noireofficial.ie/#breadcrumbs",
           "itemListElement": [
             {
               "@type": "ListItem",
               "position": 1,
               "name": "Home",
-              "item": "https://atelier-noire.com/"
+              "item": "https://www.noireofficial.ie/"
             },
             {
               "@type": "ListItem",
               "position": 2,
               "name": "Archive Drop No. 01",
-              "item": "https://atelier-noire.com/#ledger"
+              "item": "https://www.noireofficial.ie/#ledger"
             },
             {
               "@type": "ListItem",
               "position": 3,
               "name": "Fit & Silhouette Reference",
-              "item": "https://atelier-noire.com/#fit-reference"
+              "item": "https://www.noireofficial.ie/#fit-reference"
             }
           ]
         },
         {
           "@type": "Product",
-          "@id": "https://atelier-noire.com/#product-archive-01",
+          "@id": "https://www.noireofficial.ie/#product-archive-01",
           "name": "Atelier NOIRÉ Archive Drop No. 01 Heavyweight Tracksuit",
           "image": [
-            "https://atelier-noire.com/assets/aistudio/lock_in_color_details_designs_and_stitches_from_the_second_picture_clothing_reference_only_lock_in_s_969fe8a9-6386-42e6-a2f5-55ec499a4390_ba8ec28b.png",
-            "https://atelier-noire.com/assets/aistudio/2026-11-01_07_13_34.115_0600_bb8a7721.jpg"
+            "https://www.noireofficial.ie/assets/aistudio/lock_in_color_details_designs_and_stitches_from_the_second_picture_clothing_reference_only_lock_in_s_969fe8a9-6386-42e6-a2f5-55ec499a4390_ba8ec28b.png",
+            "https://www.noireofficial.ie/assets/aistudio/2026-11-01_07_13_34.115_0600_bb8a7721.jpg"
           ],
           "description": "Architecturally engineered heavyweight tracksuit designed in Dublin, Ireland. 390 GSM loopback cotton fleece hoodie paired with 280 GSM trousers and high-density 20,000-stitch chest embroidery. Strictly numbered edition of 88 sets worldwide. No reissue.",
           "sku": "AN-DROP01-TS88",
@@ -143,11 +143,11 @@
           "material": "100% Heavyweight Loopback Cotton Fleece (390 GSM Top / 280 GSM Trousers)",
           "countryOfOrigin": {
             "@type": "Country",
-            "name": "Ireland (Designed in Dublin)"
+            "name": "Ireland"
           },
           "offers": {
             "@type": "Offer",
-            "url": "https://atelier-noire.com/#ledger",
+            "url": "https://www.noireofficial.ie/#ledger",
             "priceCurrency": "EUR",
             "price": "88",
             "priceValidUntil": "2027-12-31",

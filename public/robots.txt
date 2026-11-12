@@ -4,11 +4,9 @@ Allow: /
 Allow: /assets/
 Allow: /fonts/
 
-# Disallow private administrative and internal API namespaces
-Disallow: /admin
+# Disallow internal API endpoints (/admin uses X-Robots-Tag: noindex, nofollow)
 Disallow: /api/
-Disallow: /admin/*
 Disallow: /api/*
 
-# Crawl delay and sitemap index
-Sitemap: https://atelier-noire.com/sitemap.xml
+# Sitemap Index
+Sitemap: https://www.noireofficial.ie/sitemap.xml
