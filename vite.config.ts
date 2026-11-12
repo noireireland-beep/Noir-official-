@@ -108,9 +108,11 @@ function vercelApiDevPlugin(): Plugin {
             },
           });
 
-          const pathname = parsedUrl.pathname;
-          if (pathname === '/api/orders' || pathname === '/api/orders/') {
-            const mod = await server.ssrLoadModule('/api/orders.ts');
+          const pathname = parsedUrl.pathname.replace(/\/+$/, '');
+          const directRelPath = `.${pathname}.ts`;
+          const directFile = path.resolve(rootDir, directRelPath);
+          if (fs.existsSync(directFile)) {
+            const mod = await server.ssrLoadModule(directRelPath);
             await mod.default(vercelReq, vercelRes);
             return;
           }

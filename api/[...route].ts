@@ -310,12 +310,21 @@ export default async function handler(
         return;
       }
 
-      // POST /api/admin/orders/:id/resend-email
+      // POST /api/admin/orders/:id/resend-email OR /api/admin/resend-email
       const resendMatch = subPath.match(
         /^\/admin\/orders\/([^/]+)\/resend-email$/
       );
-      if (resendMatch && method === 'POST') {
-        const orderId = decodeURIComponent(resendMatch[1]);
+      if ((resendMatch || subPath === '/admin/resend-email') && method === 'POST') {
+        const body = parseJsonBody(await resolveRequestBody(req));
+        const orderId = resendMatch
+          ? decodeURIComponent(resendMatch[1])
+          : String(body.orderId || req.query?.id || req.query?.orderId || '');
+
+        if (!orderId) {
+          res.status(400).json({ success: false, error: 'Missing orderId parameter.' });
+          return;
+        }
+
         const order = await getOrderById(orderId);
         if (!order) {
           res.status(404).json({ success: false, error: 'Order not found.' });

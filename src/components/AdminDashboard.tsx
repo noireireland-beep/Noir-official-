@@ -289,12 +289,13 @@ export const AdminDashboard: React.FC = () => {
     setResendNotificationResult(null);
     try {
       const token = await getAuthToken();
-      const res = await fetch(`/api/admin/orders/${orderId}/resend-email`, {
+      const res = await fetch('/api/admin/resend-email', {
         method: 'POST',
         headers: {
           'Authorization': `Bearer ${token}`,
           'Content-Type': 'application/json',
         },
+        body: JSON.stringify({ orderId }),
       });
       const parsed = await parseJsonResponse(res);
       const data = parsed.data;
@@ -420,13 +421,14 @@ export const AdminDashboard: React.FC = () => {
 
     try {
       const token = await getAuthToken();
-      const res = await fetch(`/api/admin/orders/${selectedOrder.id}/status`, {
+      const res = await fetch('/api/admin/status', {
         method: 'PATCH',
         headers: {
           'Authorization': `Bearer ${token}`,
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({
+          orderId: selectedOrder.id,
           status: newSelectedStatus,
           note: statusUpdateNote || `Status updated to ${newSelectedStatus} by administrator`,
         }),
@@ -468,13 +470,14 @@ export const AdminDashboard: React.FC = () => {
 
     try {
       const token = await getAuthToken();
-      const res = await fetch(`/api/admin/orders/${selectedOrder.id}/reconcile`, {
+      const res = await fetch('/api/admin/reconcile', {
         method: 'POST',
         headers: {
           'Authorization': `Bearer ${token}`,
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({
+          orderId: selectedOrder.id,
           courierName,
           trackingNumber,
           actualCollectedEur: Number(actualCollectedEur),
