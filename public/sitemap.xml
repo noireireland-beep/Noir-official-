@@ -1,20 +1,48 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9"
-        xmlns:image="http://www.google.com/schemas/sitemap-image/1.1">
+        xmlns:image="http://www.google.com/schemas/sitemap-image/1.1"
+        xmlns:video="http://www.google.com/schemas/sitemap-video/1.1">
   <url>
     <loc>https://www.noireofficial.ie/</loc>
     <lastmod>2026-11-12</lastmod>
     <changefreq>weekly</changefreq>
     <priority>1.0</priority>
     <image:image>
+      <image:loc>https://www.noireofficial.ie/assets/img/og-share.jpg</image:loc>
+      <image:title>Atelier NOIRÉ Archive Drop No. 01 — Irish Luxury Tracksuit</image:title>
+      <image:caption>Dublin-designed 390 GSM heavyweight loopback cotton fleece tracksuit limited to 88 numbered sets.</image:caption>
+    </image:image>
+    <image:image>
       <image:loc>https://www.noireofficial.ie/assets/aistudio/lock_in_color_details_designs_and_stitches_from_the_second_picture_clothing_reference_only_lock_in_s_969fe8a9-6386-42e6-a2f5-55ec499a4390_ba8ec28b.png</image:loc>
       <image:title>Atelier NOIRÉ Archive Drop No. 01 Tracksuit — Noir / Carbon</image:title>
-      <image:caption>Heavyweight 390 GSM loopback cotton fleece tracksuit designed in Dublin, Ireland.</image:caption>
+      <image:caption>Heavyweight 390 GSM loopback cotton fleece tracksuit in Noir / Carbon designed in Dublin, Ireland.</image:caption>
     </image:image>
     <image:image>
       <image:loc>https://www.noireofficial.ie/assets/aistudio/2026-11-01_07_13_34.115_0600_bb8a7721.jpg</image:loc>
       <image:title>Atelier NOIRÉ Archive Drop No. 01 Tracksuit — Blue Charcoal</image:title>
       <image:caption>390 GSM heavyweight fleece tracksuit in custom Blue Charcoal colorway with 20k stitch embroidery.</image:caption>
     </image:image>
+    <image:image>
+      <image:loc>https://www.noireofficial.ie/assets/aistudio/atelier_noire_detail_corrected_1920_e77bd4e1.jpg</image:loc>
+      <image:title>Atelier NOIRÉ Male Model Lookbook Fit Reference (Size L)</image:title>
+      <image:caption>Studio lookbook capture demonstrating relaxed drape on 5'10" male silhouette wearing Size L.</image:caption>
+    </image:image>
+    <image:image>
+      <image:loc>https://www.noireofficial.ie/assets/aistudio/file_000000005c4082119e181008ed05ab16_58be1455.jpg</image:loc>
+      <image:title>Atelier NOIRÉ Female Model Lookbook Fit Reference (Size M)</image:title>
+      <image:caption>Studio lookbook capture demonstrating tailored oversized fit on female silhouette.</image:caption>
+    </image:image>
+    <image:image>
+      <image:loc>https://www.noireofficial.ie/assets/aistudio/_MG_5259_6af32076.jpg</image:loc>
+      <image:title>Atelier NOIRÉ 20,000-Stitch Chest Embroidery Detail</image:title>
+      <image:caption>Macro inspection of high-density satin embroidery and 390 GSM loopback cotton texture.</image:caption>
+    </image:image>
+    <video:video>
+      <video:thumbnail_loc>https://www.noireofficial.ie/assets/img/measuring-poster-1600.webp</video:thumbnail_loc>
+      <video:title>Atelier NOIRÉ Studio Pattern &amp; Stitch Calibration</video:title>
+      <video:description>Behind-the-scenes artisan measuring and needle calibration for Atelier NOIRÉ Archive Drop No. 01.</video:description>
+      <video:content_loc>https://www.noireofficial.ie/noire-archive-drop/assets/video/measuring-small.mp4</video:content_loc>
+      <video:duration>5</video:duration>
+    </video:video>
   </url>
 </urlset>

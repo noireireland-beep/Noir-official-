@@ -1,0 +1,18 @@
+{
+  "name": "Atelier NOIRÉ — Archive Drop No. 01",
+  "short_name": "Atelier NOIRÉ",
+  "description": "Irish-designed luxury 390 GSM heavyweight tracksuit. Strictly 88 numbered sets worldwide with complimentary Cash on Delivery across Ireland.",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#161616",
+  "theme_color": "#161616",
+  "lang": "en-IE",
+  "icons": [
+    {
+      "src": "/assets/aistudio/1789932307313_2-removebg-preview_9526016f.png",
+      "sizes": "504x495",
+      "type": "image/png",
+      "purpose": "any"
+    }
+  ]
+}
