@@ -8,7 +8,12 @@ import {
   validateEmail,
   sanitizeString
 } from './validation.js';
-import { generateCustomerEmail, generateAdminEmail } from './email-templates.js';
+import {
+  generateCustomerEmail,
+  generateAdminEmail,
+  generateAdminForwardableCustomerCopy,
+} from './email-templates.js';
+import { dispatchOrderNotifications } from './notifications.js';
 import { ADMIN_ALLOWLIST } from './admin-service.js';
 import { createRateLimiter } from './rate-limiter.js';
 
@@ -617,6 +622,72 @@ test('17. Vercel /api handlers work for admin login, catch-all routing, stats, o
     );
     assert.equal(reconcileMissingRes.statusCode, 400);
   } finally {
+    if (hadPrevious && previousRaw !== null) {
+      fs.writeFileSync(storeFile, previousRaw, 'utf8');
+    } else if (fs.existsSync(storeFile)) {
+      fs.unlinkSync(storeFile);
+    }
+  }
+});
+
+test('18. Forward-ready customer email copy includes customer recipient, mailto link, and canonical message', async () => {
+  const mockOrderData = {
+    orderReference: 'NOIRE-88-COD-FWD1',
+    customer: {
+      ...sampleOrderPayload.customer,
+      country: 'IE',
+    },
+    items: [
+      {
+        colorway: 'carbon',
+        colorwayName: 'Noir / Carbon',
+        size: 'L',
+        quantity: 1,
+        unitPriceEur: 88,
+        subtotalEur: 88,
+      },
+    ],
+    financials: {
+      subtotalEur: 88,
+      shippingEur: 0,
+      totalEur: 88,
+      currency: 'EUR',
+    },
+    paymentMethod: 'COD',
+    paymentStatus: 'UNPAID',
+    orderStatus: 'NEW',
+    createdAt: new Date().toISOString(),
+  };
+
+  const copy = generateAdminForwardableCustomerCopy(mockOrderData);
+  assert.ok(copy.subject.includes('saoirse@atelier-noire.ie'));
+  assert.ok(copy.subject.includes('Your order has found its way to NOIRÉ.'));
+  assert.ok(copy.subject.includes('NOIRE-88-COD-FWD1'));
+  assert.ok(copy.text.includes('TO: saoirse@atelier-noire.ie'));
+  assert.ok(copy.text.includes('Hello Saoirse,'));
+  assert.ok(copy.text.includes("You're now part of that story."));
+  assert.ok(copy.html.includes('mailto:saoirse%40atelier-noire.ie'));
+  assert.ok(copy.html.includes('MANUAL CUSTOMER EMAIL COPY // NOIRE-88-COD-FWD1'));
+
+  const prevKey = process.env.RESEND_API_KEY;
+  process.env.RESEND_API_KEY = '';
+  const fs = await import('node:fs');
+  const path = await import('node:path');
+  const storeFile = path.resolve(process.cwd(), '.local-store.json');
+  const hadPrevious = fs.existsSync(storeFile);
+  const previousRaw = hadPrevious ? fs.readFileSync(storeFile, 'utf8') : null;
+  try {
+    const res = await dispatchOrderNotifications(mockOrderData, 'https://www.noireofficial.ie/admin');
+    assert.equal(res.adminSent, true);
+    assert.equal(res.adminCopySent, true);
+    assert.ok(res.adminJobId);
+    assert.ok(res.adminCopyJobId);
+  } finally {
+    if (prevKey !== undefined) {
+      process.env.RESEND_API_KEY = prevKey;
+    } else {
+      delete process.env.RESEND_API_KEY;
+    }
     if (hadPrevious && previousRaw !== null) {
       fs.writeFileSync(storeFile, previousRaw, 'utf8');
     } else if (fs.existsSync(storeFile)) {

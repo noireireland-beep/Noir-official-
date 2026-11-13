@@ -811,6 +811,51 @@ ${adminDashboardUrl}
   return { subject, text, html };
 }
 
+function generateAdminForwardableCustomerCopy(order: OrderEmailData): {
+  subject: string;
+  text: string;
+  html: string;
+} {
+  const base = generateCustomerEmail(order);
+  const subject = `SEND TO ${order.customer.email} | ${base.subject} (${order.orderReference})`;
+  const text = `==================================================
+MANUAL CUSTOMER DISPATCH — COPY & SEND TO CUSTOMER
+TO: ${order.customer.email}
+SUBJECT: ${base.subject}
+ORDER REF: ${order.orderReference}
+==================================================
+
+${base.text}`;
+
+  const mailtoHref = `mailto:${encodeURIComponent(order.customer.email)}?subject=${encodeURIComponent(base.subject)}`;
+  const dispatchStrip = `
+        <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="max-width:580px; width:100%; background-color:#1F1E1D; border:1px solid #8FA9C4; margin:0 auto 16px auto; text-align:left;">
+          <tr>
+            <td style="padding:16px 20px; font-family:'Courier New', Courier, monospace; font-size:12px; color:#E0D8CB; line-height:1.6;">
+              <div style="font-size:10px; letter-spacing:0.2em; text-transform:uppercase; color:#8FA9C4; margin-bottom:8px;">
+                MANUAL CUSTOMER EMAIL COPY // ${order.orderReference}
+              </div>
+              <div><strong style="color:#FFFFFF;">TO:</strong> <a href="${mailtoHref}" style="color:#8FA9C4; text-decoration:underline;">${order.customer.email}</a></div>
+              <div><strong style="color:#FFFFFF;">SUBJECT:</strong> ${base.subject}</div>
+              <div style="margin-top:8px; font-size:11px; color:#AFA99E;">
+                Forward or copy the customer message below and send manually to <strong style="color:#FFFFFF;">${order.customer.email}</strong>.
+              </div>
+            </td>
+          </tr>
+        </table>`;
+
+  const html = base.html.replace(
+    '<td align="center" style="padding:0;">',
+    `<td align="center" style="padding:0;">${dispatchStrip}`
+  );
+
+  return { subject, text, html };
+}
+
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
 async function recordNotificationJobSafely(
   db: Firestore | null,
   jobData: Record<string, unknown>
@@ -833,6 +878,42 @@ async function recordNotificationJobSafely(
   writeLocalStore(store);
 }
 
+async function sendViaResendWithFallback(
+  resend: Resend,
+  preferredFrom: string,
+  to: string,
+  subject: string,
+  text: string,
+  html: string
+) {
+  let sendResult = await resend.emails.send({
+    from: preferredFrom,
+    to: [to],
+    subject,
+    text,
+    html,
+  });
+
+  if (sendResult.error && preferredFrom !== DEFAULT_FROM_EMAIL) {
+    const msg = (sendResult.error.message || '').toLowerCase();
+    if (
+      sendResult.error.name === 'validation_error' ||
+      msg.includes('domain') ||
+      msg.includes('verify')
+    ) {
+      sendResult = await resend.emails.send({
+        from: DEFAULT_FROM_EMAIL,
+        to: [to],
+        subject,
+        text,
+        html,
+      });
+    }
+  }
+
+  return sendResult;
+}
+
 async function sendOrderEmailsSafely(
   db: Firestore | null,
   order: OrderEmailData,
@@ -844,19 +925,8 @@ async function sendOrderEmailsSafely(
   if (!apiKey) {
     const customerEmail = generateCustomerEmail(order);
     const adminEmail = generateAdminEmail(order, adminDashboardUrl);
+    const copyEmail = generateAdminForwardableCustomerCopy(order);
     const now = new Date().toISOString();
-
-    await recordNotificationJobSafely(db, {
-      orderId: order.orderReference,
-      recipientType: 'CUSTOMER',
-      recipientEmail: order.customer.email,
-      subject: customerEmail.subject,
-      status: 'SENT',
-      simulation: true,
-      notes: 'RESEND_API_KEY pending in env. Email payload generated and logged successfully.',
-      sentAt: now,
-      createdAt: now,
-    });
 
     await recordNotificationJobSafely(db, {
       orderId: order.orderReference,
@@ -869,6 +939,31 @@ async function sendOrderEmailsSafely(
       sentAt: now,
       createdAt: now,
     });
+
+    await recordNotificationJobSafely(db, {
+      orderId: order.orderReference,
+      recipientType: 'ADMIN_CUSTOMER_COPY',
+      recipientEmail: ADMIN_EMAIL,
+      intendedCustomerEmail: order.customer.email,
+      subject: copyEmail.subject,
+      status: 'SENT',
+      simulation: true,
+      notes: 'RESEND_API_KEY pending in env. Forward-ready customer copy logged successfully.',
+      sentAt: now,
+      createdAt: now,
+    });
+
+    await recordNotificationJobSafely(db, {
+      orderId: order.orderReference,
+      recipientType: 'CUSTOMER',
+      recipientEmail: order.customer.email,
+      subject: customerEmail.subject,
+      status: 'SENT',
+      simulation: true,
+      notes: 'RESEND_API_KEY pending in env. Email payload generated and logged successfully.',
+      sentAt: now,
+      createdAt: now,
+    });
     return;
   }
 
@@ -877,87 +972,19 @@ async function sendOrderEmailsSafely(
   const preferredFrom = !isPlaceholderValue(rawFrom)
     ? rawFrom!.trim()
     : DEFAULT_FROM_EMAIL;
+  const hasCustomDomain = !preferredFrom.includes('@resend.dev');
 
+  // 1. Admin Order Alert
   try {
-    const { subject, text, html } = generateCustomerEmail(order);
-    let sendResult = await resend.emails.send({
-      from: preferredFrom,
-      to: [order.customer.email],
+    const { subject, text, html } = generateAdminEmail(order, adminDashboardUrl);
+    const sendResult = await sendViaResendWithFallback(
+      resend,
+      preferredFrom,
+      ADMIN_EMAIL,
       subject,
       text,
-      html,
-    });
-
-    if (sendResult.error && preferredFrom !== DEFAULT_FROM_EMAIL) {
-      const msg = (sendResult.error.message || '').toLowerCase();
-      if (
-        sendResult.error.name === 'validation_error' ||
-        msg.includes('domain') ||
-        msg.includes('verify')
-      ) {
-        sendResult = await resend.emails.send({
-          from: DEFAULT_FROM_EMAIL,
-          to: [order.customer.email],
-          subject,
-          text,
-          html,
-        });
-      }
-    }
-
-    if (sendResult.error) {
-      console.error(
-        `[Resend Customer Email Error] (${order.orderReference}):`,
-        sendResult.error
-      );
-    }
-
-    await recordNotificationJobSafely(db, {
-      orderId: order.orderReference,
-      recipientType: 'CUSTOMER',
-      recipientEmail: order.customer.email,
-      subject,
-      status: sendResult.error ? 'FAILED' : 'SENT',
-      error: sendResult.error ? sendResult.error.message : undefined,
-      sentAt: sendResult.error ? undefined : new Date().toISOString(),
-      createdAt: new Date().toISOString(),
-    });
-  } catch (err) {
-    console.error(
-      `[Resend Customer Email Exception] (${order.orderReference}):`,
-      err
+      html
     );
-  }
-
-  try {
-    const { subject, text, html } = generateAdminEmail(
-      order,
-      adminDashboardUrl
-    );
-    let sendResult = await resend.emails.send({
-      from: preferredFrom,
-      to: [ADMIN_EMAIL],
-      subject,
-      text,
-      html,
-    });
-
-    if (sendResult.error && preferredFrom !== DEFAULT_FROM_EMAIL) {
-      const msg = (sendResult.error.message || '').toLowerCase();
-      if (
-        sendResult.error.name === 'validation_error' ||
-        msg.includes('domain') ||
-        msg.includes('verify')
-      ) {
-        sendResult = await resend.emails.send({
-          from: DEFAULT_FROM_EMAIL,
-          to: [ADMIN_EMAIL],
-          subject,
-          text,
-          html,
-        });
-      }
-    }
 
     if (sendResult.error) {
       console.error(
@@ -979,6 +1006,93 @@ async function sendOrderEmailsSafely(
   } catch (err) {
     console.error(
       `[Resend Admin Email Exception] (${order.orderReference}):`,
+      err
+    );
+  }
+
+  // 2. Forward-Ready Customer Email Copy Sent to Admin
+  try {
+    await sleep(600);
+    const { subject, text, html } = generateAdminForwardableCustomerCopy(order);
+    const sendResult = await sendViaResendWithFallback(
+      resend,
+      preferredFrom,
+      ADMIN_EMAIL,
+      subject,
+      text,
+      html
+    );
+
+    if (sendResult.error) {
+      console.error(
+        `[Resend Admin Customer Copy Error] (${order.orderReference}):`,
+        sendResult.error
+      );
+    }
+
+    await recordNotificationJobSafely(db, {
+      orderId: order.orderReference,
+      recipientType: 'ADMIN_CUSTOMER_COPY',
+      recipientEmail: ADMIN_EMAIL,
+      intendedCustomerEmail: order.customer.email,
+      subject,
+      status: sendResult.error ? 'FAILED' : 'SENT',
+      error: sendResult.error ? sendResult.error.message : undefined,
+      sentAt: sendResult.error ? undefined : new Date().toISOString(),
+      createdAt: new Date().toISOString(),
+    });
+  } catch (err) {
+    console.error(
+      `[Resend Admin Customer Copy Exception] (${order.orderReference}):`,
+      err
+    );
+  }
+
+  // 3. Direct Customer Email (only if custom domain configured or customer is admin)
+  try {
+    const { subject, text, html } = generateCustomerEmail(order);
+    if (hasCustomDomain || order.customer.email.toLowerCase() === ADMIN_EMAIL) {
+      await sleep(600);
+      const sendResult = await sendViaResendWithFallback(
+        resend,
+        preferredFrom,
+        order.customer.email,
+        subject,
+        text,
+        html
+      );
+
+      if (sendResult.error) {
+        console.error(
+          `[Resend Customer Email Error] (${order.orderReference}):`,
+          sendResult.error
+        );
+      }
+
+      await recordNotificationJobSafely(db, {
+        orderId: order.orderReference,
+        recipientType: 'CUSTOMER',
+        recipientEmail: order.customer.email,
+        subject,
+        status: sendResult.error ? 'FAILED' : 'SENT',
+        error: sendResult.error ? sendResult.error.message : undefined,
+        sentAt: sendResult.error ? undefined : new Date().toISOString(),
+        createdAt: new Date().toISOString(),
+      });
+    } else {
+      await recordNotificationJobSafely(db, {
+        orderId: order.orderReference,
+        recipientType: 'CUSTOMER',
+        recipientEmail: order.customer.email,
+        subject,
+        status: 'QUEUED_PENDING_DOMAIN',
+        notes: `Forward-ready copy delivered to ${ADMIN_EMAIL} for manual forwarding.`,
+        createdAt: new Date().toISOString(),
+      });
+    }
+  } catch (err) {
+    console.error(
+      `[Resend Customer Email Exception] (${order.orderReference}):`,
       err
     );
   }

@@ -1,27 +1,38 @@
 import { Resend } from 'resend';
-import { generateCustomerEmail, generateAdminEmail, type OrderEmailData } from './email-templates.js';
+import {
+  generateCustomerEmail,
+  generateAdminEmail,
+  generateAdminForwardableCustomerCopy,
+  type OrderEmailData,
+} from './email-templates.js';
 import { isPlaceholderEnvValue } from './firebase-admin.js';
 import { recordNotificationJob } from './storage-store.js';
 
 const ADMIN_EMAIL = 'noire.ireland@gmail.com';
 const DEFAULT_FROM_EMAIL = 'Atelier NOIRÉ <onboarding@resend.dev>';
 
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+function getPreferredFromEmail(): string {
+  const rawFrom = process.env.RESEND_FROM_EMAIL;
+  return !isPlaceholderEnvValue(rawFrom) ? rawFrom!.trim() : DEFAULT_FROM_EMAIL;
+}
+
 async function sendEmailViaResend(
   resend: Resend,
   to: string,
   subject: string,
   text: string,
-  html: string,
-  options?: { isCustomerNotification?: boolean; customerOriginalEmail?: string }
+  html: string
 ): Promise<{ success: boolean; error?: string; status: 'SENT' | 'FAILED' | 'QUEUED_PENDING_DOMAIN'; recipientUsed: string }> {
-  const rawFrom = process.env.RESEND_FROM_EMAIL;
-  const preferredFrom = !isPlaceholderEnvValue(rawFrom) ? rawFrom!.trim() : DEFAULT_FROM_EMAIL;
+  const preferredFrom = getPreferredFromEmail();
   const fallbackFrom = DEFAULT_FROM_EMAIL;
 
-  let recipient = to;
   let result = await resend.emails.send({
     from: preferredFrom,
-    to: [recipient],
+    to: [to],
     subject,
     text,
     html,
@@ -38,7 +49,7 @@ async function sendEmailViaResend(
       console.log(`[Resend Notice]: Custom domain ${preferredFrom} unverified on Resend. Retrying via ${fallbackFrom}`);
       result = await resend.emails.send({
         from: fallbackFrom,
-        to: [recipient],
+        to: [to],
         subject,
         text,
         html,
@@ -83,70 +94,25 @@ async function sendEmailViaResend(
 export async function dispatchOrderNotifications(order: OrderEmailData, adminDashboardUrl: string): Promise<{
   customerJobId?: string;
   adminJobId?: string;
+  adminCopyJobId?: string;
   customerSent: boolean;
   adminSent: boolean;
+  adminCopySent: boolean;
 }> {
   const rawApiKey = process.env.RESEND_API_KEY;
   const apiKey = !isPlaceholderEnvValue(rawApiKey) ? rawApiKey!.trim() : '';
   const resend = apiKey ? new Resend(apiKey) : null;
+  const preferredFrom = getPreferredFromEmail();
+  const hasCustomDomain = !preferredFrom.includes('@resend.dev');
 
   let customerSent = false;
   let adminSent = false;
+  let adminCopySent = false;
   let customerJobId: string | undefined;
   let adminJobId: string | undefined;
+  let adminCopyJobId: string | undefined;
 
-  // 1. Dispatch Customer Notification Job Independently
-  try {
-    const { subject, text, html } = generateCustomerEmail(order);
-    const jobData: Record<string, unknown> = {
-      orderId: order.orderReference,
-      recipientType: 'CUSTOMER',
-      recipientEmail: order.customer.email,
-      subject,
-      status: 'PENDING',
-      retries: 0,
-      createdAt: new Date().toISOString(),
-    };
-
-    if (resend) {
-      try {
-        const sendRes = await sendEmailViaResend(
-          resend,
-          order.customer.email,
-          subject,
-          text,
-          html,
-          { isCustomerNotification: true, customerOriginalEmail: order.customer.email }
-        );
-        jobData.status = sendRes.status;
-        jobData.recipientUsed = sendRes.recipientUsed;
-        if (sendRes.success) {
-          jobData.sentAt = new Date().toISOString();
-          customerSent = true;
-          console.log(`[Resend Success]: Customer confirmation email executed successfully for ${order.customer.email}`);
-        } else if (sendRes.error) {
-          jobData.error = sendRes.error;
-        }
-      } catch (sendErr: unknown) {
-        jobData.status = 'FAILED';
-        jobData.error = sendErr instanceof Error ? sendErr.message : String(sendErr);
-        console.warn(`[Resend Notice - Customer Email]:`, jobData.error);
-      }
-    } else {
-      jobData.status = 'SENT';
-      jobData.sentAt = new Date().toISOString();
-      jobData.simulation = true;
-      jobData.notes = 'RESEND_API_KEY pending in env. Email payload generated and logged successfully.';
-      customerSent = true;
-      console.log(`[Email Simulation - Customer]: To ${order.customer.email} (RESEND_API_KEY not set)`);
-    }
-
-    customerJobId = await recordNotificationJob(jobData);
-  } catch (err) {
-    console.warn('Customer notification job recording notice:', err);
-  }
-
-  // 2. Dispatch Administrator Notification Job Independently
+  // 1. Dispatch Administrator Order Alert Independently
   try {
     const { subject, text, html } = generateAdminEmail(order, adminDashboardUrl);
     const jobData: Record<string, unknown> = {
@@ -190,7 +156,103 @@ export async function dispatchOrderNotifications(order: OrderEmailData, adminDas
     console.warn('Admin notification job recording notice:', err);
   }
 
-  return { customerJobId, adminJobId, customerSent, adminSent };
+  // 2. Always Send Forward-Ready Customer Email Copy to Admin for Manual Sending
+  try {
+    const { subject, text, html } = generateAdminForwardableCustomerCopy(order);
+    const jobData: Record<string, unknown> = {
+      orderId: order.orderReference,
+      recipientType: 'ADMIN_CUSTOMER_COPY',
+      recipientEmail: ADMIN_EMAIL,
+      intendedCustomerEmail: order.customer.email,
+      subject,
+      status: 'PENDING',
+      retries: 0,
+      createdAt: new Date().toISOString(),
+    };
+
+    if (resend) {
+      await sleep(600); // Stay cleanly within Resend's 2 req/sec rate limit
+      try {
+        const sendRes = await sendEmailViaResend(resend, ADMIN_EMAIL, subject, text, html);
+        jobData.status = sendRes.status;
+        jobData.recipientUsed = sendRes.recipientUsed;
+        if (sendRes.success) {
+          jobData.sentAt = new Date().toISOString();
+          adminCopySent = true;
+          console.log(`[Resend Success]: Forward-ready customer copy sent to ${ADMIN_EMAIL} for ${order.customer.email}`);
+        } else if (sendRes.error) {
+          jobData.error = sendRes.error;
+        }
+      } catch (sendErr: unknown) {
+        jobData.status = 'FAILED';
+        jobData.error = sendErr instanceof Error ? sendErr.message : String(sendErr);
+        console.warn(`[Resend Notice - Admin Customer Copy]:`, jobData.error);
+      }
+    } else {
+      jobData.status = 'SENT';
+      jobData.sentAt = new Date().toISOString();
+      jobData.simulation = true;
+      jobData.notes = 'RESEND_API_KEY pending in env. Forward-ready customer copy logged successfully.';
+      adminCopySent = true;
+      console.log(`[Email Simulation - Admin Customer Copy]: To ${ADMIN_EMAIL} for ${order.customer.email}`);
+    }
+
+    adminCopyJobId = await recordNotificationJob(jobData);
+  } catch (err) {
+    console.warn('Admin customer copy job recording notice:', err);
+  }
+
+  // 3. Dispatch Direct Customer Email (only if custom domain configured or customer is admin)
+  try {
+    const { subject, text, html } = generateCustomerEmail(order);
+    const jobData: Record<string, unknown> = {
+      orderId: order.orderReference,
+      recipientType: 'CUSTOMER',
+      recipientEmail: order.customer.email,
+      subject,
+      status: 'PENDING',
+      retries: 0,
+      createdAt: new Date().toISOString(),
+    };
+
+    if (resend) {
+      if (hasCustomDomain || order.customer.email.toLowerCase() === ADMIN_EMAIL) {
+        await sleep(600);
+        try {
+          const sendRes = await sendEmailViaResend(resend, order.customer.email, subject, text, html);
+          jobData.status = sendRes.status;
+          jobData.recipientUsed = sendRes.recipientUsed;
+          if (sendRes.success) {
+            jobData.sentAt = new Date().toISOString();
+            customerSent = true;
+            console.log(`[Resend Success]: Customer confirmation email executed successfully for ${order.customer.email}`);
+          } else if (sendRes.error) {
+            jobData.error = sendRes.error;
+          }
+        } catch (sendErr: unknown) {
+          jobData.status = 'FAILED';
+          jobData.error = sendErr instanceof Error ? sendErr.message : String(sendErr);
+          console.warn(`[Resend Notice - Customer Email]:`, jobData.error);
+        }
+      } else {
+        jobData.status = 'QUEUED_PENDING_DOMAIN';
+        jobData.notes = `Customer copy delivered to ${ADMIN_EMAIL} for manual forwarding.`;
+      }
+    } else {
+      jobData.status = 'SENT';
+      jobData.sentAt = new Date().toISOString();
+      jobData.simulation = true;
+      jobData.notes = 'RESEND_API_KEY pending in env. Email payload generated and logged successfully.';
+      customerSent = true;
+      console.log(`[Email Simulation - Customer]: To ${order.customer.email} (RESEND_API_KEY not set)`);
+    }
+
+    customerJobId = await recordNotificationJob(jobData);
+  } catch (err) {
+    console.warn('Customer notification job recording notice:', err);
+  }
+
+  return { customerJobId, adminJobId, adminCopyJobId, customerSent, adminSent, adminCopySent };
 }
 
 export async function resendCustomerEmail(order: OrderEmailData): Promise<{
@@ -202,6 +264,8 @@ export async function resendCustomerEmail(order: OrderEmailData): Promise<{
   const rawApiKey = process.env.RESEND_API_KEY;
   const apiKey = !isPlaceholderEnvValue(rawApiKey) ? rawApiKey!.trim() : '';
   const resend = apiKey ? new Resend(apiKey) : null;
+  const preferredFrom = getPreferredFromEmail();
+  const hasCustomDomain = !preferredFrom.includes('@resend.dev');
   const { subject, text, html } = generateCustomerEmail(order);
 
   const jobData: Record<string, unknown> = {
@@ -217,25 +281,35 @@ export async function resendCustomerEmail(order: OrderEmailData): Promise<{
 
   if (resend) {
     try {
-      const sendRes = await sendEmailViaResend(
-        resend,
-        order.customer.email,
-        subject,
-        text,
-        html,
-        { isCustomerNotification: true, customerOriginalEmail: order.customer.email }
-      );
-      jobData.status = sendRes.status;
-      jobData.recipientUsed = sendRes.recipientUsed;
-      if (sendRes.success) {
-        jobData.sentAt = new Date().toISOString();
-        await recordNotificationJob(jobData);
-        return { success: true, status: 'SENT', recipient: order.customer.email };
-      } else {
-        jobData.error = sendRes.error;
-        await recordNotificationJob(jobData);
-        return { success: false, status: sendRes.status, error: sendRes.error, recipient: order.customer.email };
+      if (hasCustomDomain || order.customer.email.toLowerCase() === ADMIN_EMAIL) {
+        const sendRes = await sendEmailViaResend(resend, order.customer.email, subject, text, html);
+        if (sendRes.success) {
+          jobData.status = 'SENT';
+          jobData.recipientUsed = sendRes.recipientUsed;
+          jobData.sentAt = new Date().toISOString();
+          await recordNotificationJob(jobData);
+          return { success: true, status: 'SENT', recipient: order.customer.email };
+        }
       }
+
+      // Sandbox fallback: send forward-ready copy straight to admin email
+      const copy = generateAdminForwardableCustomerCopy(order);
+      const copyRes = await sendEmailViaResend(resend, ADMIN_EMAIL, copy.subject, copy.text, copy.html);
+      jobData.status = copyRes.success ? 'SENT' : copyRes.status;
+      jobData.recipientUsed = ADMIN_EMAIL;
+      jobData.notes = `Delivered forward-ready copy to ${ADMIN_EMAIL} for manual forwarding to ${order.customer.email}.`;
+      if (copyRes.success) {
+        jobData.sentAt = new Date().toISOString();
+      } else if (copyRes.error) {
+        jobData.error = copyRes.error;
+      }
+      await recordNotificationJob(jobData);
+      return {
+        success: copyRes.success,
+        status: copyRes.success ? 'SENT' : copyRes.status,
+        error: copyRes.error,
+        recipient: ADMIN_EMAIL,
+      };
     } catch (err: unknown) {
       const errorMsg = err instanceof Error ? err.message : String(err);
       jobData.status = 'FAILED';
@@ -257,4 +331,3 @@ export async function resendCustomerEmail(order: OrderEmailData): Promise<{
     };
   }
 }
-

@@ -212,6 +212,47 @@ Ireland
   return { subject, text, html };
 }
 
+export function generateAdminForwardableCustomerCopy(order: OrderEmailData): {
+  subject: string;
+  text: string;
+  html: string;
+} {
+  const base = generateCustomerEmail(order);
+  const subject = `SEND TO ${order.customer.email} | ${base.subject} (${order.orderReference})`;
+  const text = `==================================================
+MANUAL CUSTOMER DISPATCH — COPY & SEND TO CUSTOMER
+TO: ${order.customer.email}
+SUBJECT: ${base.subject}
+ORDER REF: ${order.orderReference}
+==================================================
+
+${base.text}`;
+
+  const mailtoHref = `mailto:${encodeURIComponent(order.customer.email)}?subject=${encodeURIComponent(base.subject)}`;
+  const dispatchStrip = `
+        <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="max-width:580px; width:100%; background-color:#1F1E1D; border:1px solid #8FA9C4; margin:0 auto 16px auto; text-align:left;">
+          <tr>
+            <td style="padding:16px 20px; font-family:'Courier New', Courier, monospace; font-size:12px; color:#E0D8CB; line-height:1.6;">
+              <div style="font-size:10px; letter-spacing:0.2em; text-transform:uppercase; color:#8FA9C4; margin-bottom:8px;">
+                MANUAL CUSTOMER EMAIL COPY // ${order.orderReference}
+              </div>
+              <div><strong style="color:#FFFFFF;">TO:</strong> <a href="${mailtoHref}" style="color:#8FA9C4; text-decoration:underline;">${order.customer.email}</a></div>
+              <div><strong style="color:#FFFFFF;">SUBJECT:</strong> ${base.subject}</div>
+              <div style="margin-top:8px; font-size:11px; color:#AFA99E;">
+                Forward or copy the customer message below and send manually to <strong style="color:#FFFFFF;">${order.customer.email}</strong>.
+              </div>
+            </td>
+          </tr>
+        </table>`;
+
+  const html = base.html.replace(
+    '<td align="center" style="padding:0;">',
+    `<td align="center" style="padding:0;">${dispatchStrip}`
+  );
+
+  return { subject, text, html };
+}
+
 export function generateAdminEmail(order: OrderEmailData, adminDashboardUrl: string): { subject: string; text: string; html: string } {
   const subject = `NEW ORDER | ATELIER NOIRÉ | ${order.orderReference}`;
 
