@@ -11,7 +11,6 @@ import {
 import {
   generateCustomerEmail,
   generateAdminEmail,
-  generateAdminForwardableCustomerCopy,
 } from './email-templates.js';
 import { dispatchOrderNotifications } from './notifications.js';
 import { ADMIN_ALLOWLIST } from './admin-service.js';
@@ -630,7 +629,7 @@ test('17. Vercel /api handlers work for admin login, catch-all routing, stats, o
   }
 });
 
-test('18. Forward-ready customer email copy includes customer recipient, mailto link, and canonical message', async () => {
+test('18. Customer email is pure for direct forwarding while Admin email holds recipient & subject details separately', async () => {
   const mockOrderData = {
     orderReference: 'NOIRE-88-COD-FWD1',
     customer: {
@@ -659,15 +658,24 @@ test('18. Forward-ready customer email copy includes customer recipient, mailto 
     createdAt: new Date().toISOString(),
   };
 
-  const copy = generateAdminForwardableCustomerCopy(mockOrderData);
-  assert.ok(copy.subject.includes('saoirse@atelier-noire.ie'));
-  assert.ok(copy.subject.includes('Your order has found its way to NOIRÉ.'));
-  assert.ok(copy.subject.includes('NOIRE-88-COD-FWD1'));
-  assert.ok(copy.text.includes('TO: saoirse@atelier-noire.ie'));
-  assert.ok(copy.text.includes('Hello Saoirse,'));
-  assert.ok(copy.text.includes("You're now part of that story."));
-  assert.ok(copy.html.includes('mailto:saoirse%40atelier-noire.ie'));
-  assert.ok(copy.html.includes('MANUAL CUSTOMER EMAIL COPY // NOIRE-88-COD-FWD1'));
+  // Email 2 (Customer Email): must be 100% pure without admin instructions, TO:, SUBJECT:, or forward banner
+  const customerCopy = generateCustomerEmail(mockOrderData);
+  assert.equal(customerCopy.subject, 'Your order has found its way to NOIRÉ.');
+  assert.equal(customerCopy.text.includes('MANUAL CUSTOMER DISPATCH'), false);
+  assert.equal(customerCopy.text.includes('TO:'), false);
+  assert.equal(customerCopy.text.includes('SUBJECT:'), false);
+  assert.equal(customerCopy.html.includes('MANUAL CUSTOMER EMAIL COPY'), false);
+  assert.equal(customerCopy.html.includes('Forward or copy'), false);
+  assert.ok(customerCopy.text.includes('Hello Saoirse,'));
+  assert.ok(customerCopy.text.includes("You're now part of that story."));
+
+  // Email 1 (Admin Email): holds customer recipient email & forwarding subject separately
+  const adminEmail = generateAdminEmail(mockOrderData, 'https://www.noireofficial.ie/admin');
+  assert.ok(adminEmail.text.includes('Send To: saoirse@atelier-noire.ie'));
+  assert.ok(adminEmail.text.includes('Email Subject: Your order has found its way to NOIRÉ.'));
+  assert.ok(adminEmail.html.includes('MANUAL CUSTOMER EMAIL FORWARDING DETAILS'));
+  assert.ok(adminEmail.html.includes('mailto:saoirse%40atelier-noire.ie'));
+  assert.ok(adminEmail.html.includes('Your order has found its way to NOIRÉ.'));
 
   const prevKey = process.env.RESEND_API_KEY;
   process.env.RESEND_API_KEY = '';

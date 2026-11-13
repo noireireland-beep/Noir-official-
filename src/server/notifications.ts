@@ -2,7 +2,6 @@ import { Resend } from 'resend';
 import {
   generateCustomerEmail,
   generateAdminEmail,
-  generateAdminForwardableCustomerCopy,
   type OrderEmailData,
 } from './email-templates.js';
 import { isPlaceholderEnvValue } from './firebase-admin.js';
@@ -156,9 +155,9 @@ export async function dispatchOrderNotifications(order: OrderEmailData, adminDas
     console.warn('Admin notification job recording notice:', err);
   }
 
-  // 2. Always Send Forward-Ready Customer Email Copy to Admin for Manual Sending
+  // 2. Always Send Clean Customer Email Copy to Admin for Direct Manual Forwarding
   try {
-    const { subject, text, html } = generateAdminForwardableCustomerCopy(order);
+    const { subject, text, html } = generateCustomerEmail(order);
     const jobData: Record<string, unknown> = {
       orderId: order.orderReference,
       recipientType: 'ADMIN_CUSTOMER_COPY',
@@ -292,12 +291,11 @@ export async function resendCustomerEmail(order: OrderEmailData): Promise<{
         }
       }
 
-      // Sandbox fallback: send forward-ready copy straight to admin email
-      const copy = generateAdminForwardableCustomerCopy(order);
-      const copyRes = await sendEmailViaResend(resend, ADMIN_EMAIL, copy.subject, copy.text, copy.html);
+      // Sandbox fallback: send clean customer email straight to admin email for direct forwarding
+      const copyRes = await sendEmailViaResend(resend, ADMIN_EMAIL, subject, text, html);
       jobData.status = copyRes.success ? 'SENT' : copyRes.status;
       jobData.recipientUsed = ADMIN_EMAIL;
-      jobData.notes = `Delivered forward-ready copy to ${ADMIN_EMAIL} for manual forwarding to ${order.customer.email}.`;
+      jobData.notes = `Delivered clean customer email to ${ADMIN_EMAIL} for manual forwarding to ${order.customer.email}.`;
       if (copyRes.success) {
         jobData.sentAt = new Date().toISOString();
       } else if (copyRes.error) {
