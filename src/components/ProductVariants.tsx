@@ -9,7 +9,9 @@ import {
   FIT_MODELS,
   FitModel
 } from '../utils/archive-data';
+import { RotateCcw } from 'lucide-react';
 import { CareModalTab } from './CustomerCareModal';
+import { computeActiveSlideFromScroll } from '../utils/mobileStoryNavigation';
 import {
   WishlistItem,
   loadWishlist,
@@ -24,6 +26,7 @@ interface ProductVariantsProps {
   onSelectColor: (color: 'carbon' | 'blue-charcoal') => void;
   onAddToCart: (colorway: 'carbon' | 'blue-charcoal', size: string) => void;
   onOpenCareModal?: (tab: CareModalTab) => void;
+  onReplayStory?: () => void;
 }
 
 export const ProductVariants: React.FC<ProductVariantsProps> = ({
@@ -31,6 +34,7 @@ export const ProductVariants: React.FC<ProductVariantsProps> = ({
   onSelectColor,
   onAddToCart,
   onOpenCareModal,
+  onReplayStory,
 }) => {
   const sectionRef = useRef<HTMLElement>(null);
   const [selectedSize, setSelectedSize] = useState<string>('L');
@@ -77,19 +81,80 @@ export const ProductVariants: React.FC<ProductVariantsProps> = ({
 
   const sizes = ['S', 'M', 'L', 'XL', 'XXL'];
 
-  // Reset photo index when colorway changes if index is out of bounds
+  const mobileStripRef = useRef<HTMLDivElement>(null);
+  const mobileCardRefs = useRef<(HTMLDivElement | null)[]>([]);
+  const scrollRafRef = useRef<number | null>(null);
+
+  // Reset photo index & mobile horizontal scroll strip when colorway changes
   useEffect(() => {
-    if (photoIndex >= photos.length) {
-      setPhotoIndex(0);
+    setPhotoIndex(0);
+    if (mobileStripRef.current) {
+      mobileStripRef.current.scrollTo({ left: 0, behavior: 'auto' });
     }
-  }, [selectedColor, photos.length, photoIndex]);
+  }, [selectedColor]);
+
+  useEffect(() => {
+    return () => {
+      if (scrollRafRef.current !== null) {
+        window.cancelAnimationFrame(scrollRafRef.current);
+      }
+    };
+  }, []);
+
+  const scrollMobileSlideTo = useCallback((index: number) => {
+    const bounded = Math.max(0, Math.min(photos.length - 1, index));
+    setPhotoIndex(bounded);
+    const strip = mobileStripRef.current;
+    const card = mobileCardRefs.current[bounded];
+    if (strip && card) {
+      const targetLeft = card.offsetLeft - Math.max(0, (strip.clientWidth - card.clientWidth) / 2);
+      strip.scrollTo({ left: Math.max(0, targetLeft), behavior: 'smooth' });
+    }
+  }, [photos.length]);
+
+  const handleMobileStripScroll = useCallback(() => {
+    if (scrollRafRef.current !== null) return;
+    scrollRafRef.current = window.requestAnimationFrame(() => {
+      scrollRafRef.current = null;
+      const strip = mobileStripRef.current;
+      if (!strip) return;
+      const offsets = mobileCardRefs.current
+        .slice(0, photos.length)
+        .map((el) =>
+          el ? Math.max(0, el.offsetLeft - Math.max(0, (strip.clientWidth - el.clientWidth) / 2)) : 0
+        );
+      const nearest = computeActiveSlideFromScroll({
+        scrollLeft: strip.scrollLeft,
+        slideOffsets: offsets,
+      });
+      setPhotoIndex((prev) => (prev === nearest ? prev : nearest));
+    });
+  }, [photos.length]);
 
   const handleNextPhoto = useCallback(() => {
-    setPhotoIndex((prev) => (prev + 1) % photos.length);
+    setPhotoIndex((prev) => {
+      const next = (prev + 1) % photos.length;
+      const strip = mobileStripRef.current;
+      const card = mobileCardRefs.current[next];
+      if (strip && card) {
+        const targetLeft = card.offsetLeft - Math.max(0, (strip.clientWidth - card.clientWidth) / 2);
+        strip.scrollTo({ left: Math.max(0, targetLeft), behavior: 'smooth' });
+      }
+      return next;
+    });
   }, [photos.length]);
 
   const handlePrevPhoto = useCallback(() => {
-    setPhotoIndex((prev) => (prev - 1 + photos.length) % photos.length);
+    setPhotoIndex((prev) => {
+      const next = (prev - 1 + photos.length) % photos.length;
+      const strip = mobileStripRef.current;
+      const card = mobileCardRefs.current[next];
+      if (strip && card) {
+        const targetLeft = card.offsetLeft - Math.max(0, (strip.clientWidth - card.clientWidth) / 2);
+        strip.scrollTo({ left: Math.max(0, targetLeft), behavior: 'smooth' });
+      }
+      return next;
+    });
   }, [photos.length]);
 
   // Touch and drag gesture handling for horizontal sliding between perspectives
@@ -196,6 +261,27 @@ export const ProductVariants: React.FC<ProductVariantsProps> = ({
             </div>
 
           </div>
+
+          {/* Mobile-only Replay Storytelling Bar: sophisticatedly placed at archive entry */}
+          {onReplayStory && (
+            <div className="md:hidden mt-3.5 pt-3 border-t border-[#D6CCBA]/15 flex items-center justify-between gap-3">
+              <span className="text-[10px] font-mono-archive uppercase tracking-[0.16em] text-[#D6CCBA]/70">
+                ARCHIVE INTRODUCTION
+              </span>
+              <button
+                type="button"
+                onClick={onReplayStory}
+                className={`min-h-[40px] px-3.5 py-2 border font-mono-archive text-[10px] uppercase tracking-[0.18em] font-semibold flex items-center gap-2 transition-colors cursor-pointer whitespace-nowrap shrink-0 ${
+                  isBlue
+                    ? 'border-[#8FA9C4]/65 bg-[#1B2A3A] text-[#F0F2F4] hover:bg-[#8FA9C4] hover:text-[#111820]'
+                    : 'border-[#D6CCBA]/50 bg-[#232220] text-[#F5EFEB] hover:bg-[#F5EFEB] hover:text-[#161616]'
+                }`}
+              >
+                <RotateCcw className="w-3 h-3" aria-hidden="true" />
+                <span>Replay Story</span>
+              </button>
+            </div>
+          )}
         </header>
 
         {/* ═══════════════════════════════════════════════════════════════
@@ -206,7 +292,7 @@ export const ProductVariants: React.FC<ProductVariantsProps> = ({
         <div className="space-y-4 sm:space-y-6">
           
           {/* 2-Column Side-by-Side Colourway Pedestals */}
-          <div className="grid grid-cols-2 gap-3 sm:gap-5 md:gap-8 items-stretch">
+          <div className="grid grid-cols-2 gap-2.5 sm:gap-5 md:gap-8 items-stretch">
             
             {/* ────────────────── COLOURWAY 01: NOIR / CARBON ────────────────── */}
             <div 
@@ -224,25 +310,25 @@ export const ProductVariants: React.FC<ProductVariantsProps> = ({
                   setPhotoIndex(0);
                 }
               }}
-              className={`group relative flex flex-col justify-between border p-3 sm:p-4 md:p-5 transition-all duration-300 cursor-pointer select-none overflow-hidden ${
+              className={`group relative flex flex-col justify-between border p-2.5 sm:p-4 md:p-5 transition-all duration-300 cursor-pointer select-none overflow-hidden ${
                 selectedColor === 'carbon'
-                  ? 'border-[#D6CCBA] bg-[#2B2A28]/60 ring-1 ring-[#D6CCBA]/60 shadow-2xl'
-                  : 'border-[#D6CCBA]/25 bg-[#161616]/90 hover:border-[#D6CCBA]/50 hover:bg-[#2B2A28]/40'
+                  ? 'border-[#F5EFEB] md:border-[#D6CCBA] bg-[#2D2B28] md:bg-[#2B2A28]/60 ring-1 ring-[#F5EFEB]/70 md:ring-[#D6CCBA]/60 shadow-2xl'
+                  : 'border-[#D6CCBA]/35 md:border-[#D6CCBA]/25 bg-[#1B1A19] md:bg-[#161616]/90 hover:border-[#D6CCBA]/50 hover:bg-[#2B2A28]/40'
               }`}
             >
-              {/* Top Badge Strip with High-Contrast Prominent Badges */}
-              <div className="flex items-center justify-between gap-2 mb-2 sm:mb-3">
-                <div className="flex items-center gap-1.5 sm:gap-2 text-[10px] sm:text-xs font-mono-archive uppercase tracking-[0.16em] sm:tracking-[0.18em] text-[#D6CCBA] min-w-0">
+              {/* Top Badge Strip */}
+              <div className="flex items-center justify-between gap-1.5 sm:gap-2 mb-2 sm:mb-3">
+                <div className="flex items-center gap-1.5 sm:gap-2 text-[10px] sm:text-xs font-mono-archive uppercase tracking-[0.12em] sm:tracking-[0.18em] text-[#F5EFEB] sm:text-[#D6CCBA] min-w-0">
                   <span className="w-2 h-2 rounded-full bg-[#FF0800] shrink-0 shadow-[0_0_8px_rgba(255,8,0,0.6)]" />
-                  <span className="font-semibold truncate">NOIR / CARBON</span>
+                  <span className="font-semibold whitespace-nowrap">NOIR / CARBON</span>
                 </div>
                 
                 {selectedColor === 'carbon' ? (
-                  <span className="text-[10px] sm:text-xs font-mono-archive tracking-[0.18em] uppercase px-2.5 py-1 bg-[#D6CCBA] text-[#161616] font-bold shrink-0 shadow-lg">
+                  <span className="hidden sm:inline-block text-[10px] sm:text-xs font-mono-archive tracking-[0.18em] uppercase px-2.5 py-1 bg-[#D6CCBA] text-[#161616] font-bold shrink-0 shadow-lg">
                     ACTIVE
                   </span>
                 ) : (
-                  <span className="text-[10px] sm:text-xs font-mono-archive tracking-[0.18em] uppercase px-2.5 py-1 bg-[#242321] text-[#D6CCBA] border border-[#D6CCBA]/40 group-hover:bg-[#D6CCBA] group-hover:text-[#161616] font-semibold shrink-0 transition-colors shadow-md">
+                  <span className="hidden sm:inline-block text-[10px] sm:text-xs font-mono-archive tracking-[0.18em] uppercase px-2.5 py-1 bg-[#242321] text-[#D6CCBA] border border-[#D6CCBA]/40 group-hover:bg-[#D6CCBA] group-hover:text-[#161616] font-semibold shrink-0 transition-colors shadow-md">
                     SELECT →
                   </span>
                 )}
@@ -250,12 +336,12 @@ export const ProductVariants: React.FC<ProductVariantsProps> = ({
 
               {/* Garment Image Stage: Permanent Iconic First Full-Set Picture */}
               <div 
-                className="relative w-full aspect-[4/5] max-h-[380px] sm:max-h-[440px] flex items-center justify-center overflow-hidden border border-[#D6CCBA]/15 bg-[#191919] p-2.5 sm:p-3 transition-all duration-500 ease-out"
+                className="relative w-full aspect-[4/5] max-h-[380px] sm:max-h-[440px] flex items-center justify-center overflow-hidden border border-[#D6CCBA]/20 md:border-[#D6CCBA]/15 bg-[#201F1D] md:bg-[#191919] p-2 sm:p-3 transition-all duration-500 ease-out"
               >
                 <div 
-                  className="absolute inset-0 pointer-events-none opacity-45"
+                  className="absolute inset-0 pointer-events-none opacity-65 md:opacity-45"
                   style={{
-                    background: 'radial-gradient(ellipse 80% 65% at 50% 50%, #2B2A28 0%, #161616 100%)',
+                    background: 'radial-gradient(ellipse 80% 65% at 50% 50%, #383531 0%, #191817 100%)',
                   }}
                 />
                 <div className="plate-grain absolute inset-0 pointer-events-none opacity-20" />
@@ -268,10 +354,20 @@ export const ProductVariants: React.FC<ProductVariantsProps> = ({
                 />
               </div>
 
-              {/* Bottom Spec Strip: Clean metadata without inventory counts */}
-              <div className="mt-2 sm:mt-3 pt-2 border-t border-[#D6CCBA]/15 flex items-center justify-center sm:justify-start text-[10px] sm:text-xs font-mono-archive">
+              {/* Bottom Spec Strip */}
+              <div className="mt-2 sm:mt-3 pt-2 border-t border-[#D6CCBA]/20 md:border-[#D6CCBA]/15 flex items-center justify-between sm:justify-start gap-1 text-[10px] sm:text-xs font-mono-archive">
                 <span className="text-[#D6CCBA] font-medium tracking-wider uppercase truncate">
-                  Natural Botanical Black
+                  <span className="sm:hidden">Matte Black</span>
+                  <span className="hidden sm:inline">Natural Botanical Black</span>
+                </span>
+                <span
+                  className={`sm:hidden px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-[0.14em] shrink-0 ${
+                    selectedColor === 'carbon'
+                      ? 'bg-[#F5EFEB] text-[#161616]'
+                      : 'border border-[#D6CCBA]/45 text-[#D6CCBA]'
+                  }`}
+                >
+                  {selectedColor === 'carbon' ? 'ACTIVE' : 'SELECT →'}
                 </span>
               </div>
             </div>
@@ -292,25 +388,25 @@ export const ProductVariants: React.FC<ProductVariantsProps> = ({
                   setPhotoIndex(0);
                 }
               }}
-              className={`group relative flex flex-col justify-between border p-3 sm:p-4 md:p-5 transition-all duration-300 cursor-pointer select-none overflow-hidden ${
+              className={`group relative flex flex-col justify-between border p-2.5 sm:p-4 md:p-5 transition-all duration-300 cursor-pointer select-none overflow-hidden ${
                 selectedColor === 'blue-charcoal'
-                  ? 'border-[#8FA9C4] bg-[#263443]/60 ring-1 ring-[#8FA9C4]/60 shadow-2xl'
-                  : 'border-[#465462]/45 bg-[#14191F]/90 hover:border-[#8FA9C4]/50 hover:bg-[#263443]/35'
+                  ? 'border-[#A8C2DC] md:border-[#8FA9C4] bg-[#213142] md:bg-[#263443]/60 ring-1 ring-[#A8C2DC]/70 md:ring-[#8FA9C4]/60 shadow-2xl'
+                  : 'border-[#465462]/60 md:border-[#465462]/45 bg-[#161E27] md:bg-[#14191F]/90 hover:border-[#8FA9C4]/50 hover:bg-[#263443]/35'
               }`}
             >
-              {/* Top Badge Strip with High-Contrast Prominent Badges */}
-              <div className="flex items-center justify-between gap-2 mb-2 sm:mb-3">
-                <div className="flex items-center gap-1.5 sm:gap-2 text-[10px] sm:text-xs font-mono-archive uppercase tracking-[0.16em] sm:tracking-[0.18em] text-[#BBC6D0] min-w-0">
+              {/* Top Badge Strip */}
+              <div className="flex items-center justify-between gap-1.5 sm:gap-2 mb-2 sm:mb-3">
+                <div className="flex items-center gap-1.5 sm:gap-2 text-[10px] sm:text-xs font-mono-archive uppercase tracking-[0.12em] sm:tracking-[0.18em] text-[#F0F2F4] sm:text-[#BBC6D0] min-w-0">
                   <span className="w-2 h-2 rounded-full bg-[#8FA9C4] shrink-0 shadow-[0_0_8px_rgba(143,169,196,0.6)]" />
-                  <span className="font-semibold truncate">BLUE CHARCOAL</span>
+                  <span className="font-semibold whitespace-nowrap">BLUE CHARCOAL</span>
                 </div>
                 
                 {selectedColor === 'blue-charcoal' ? (
-                  <span className="text-[10px] sm:text-xs font-mono-archive tracking-[0.18em] uppercase px-2.5 py-1 bg-[#8FA9C4] text-[#111820] font-bold shrink-0 shadow-lg">
+                  <span className="hidden sm:inline-block text-[10px] sm:text-xs font-mono-archive tracking-[0.18em] uppercase px-2.5 py-1 bg-[#8FA9C4] text-[#111820] font-bold shrink-0 shadow-lg">
                     ACTIVE
                   </span>
                 ) : (
-                  <span className="text-[10px] sm:text-xs font-mono-archive tracking-[0.18em] uppercase px-2.5 py-1 bg-[#1A232E] text-[#BBC6D0] border border-[#8FA9C4]/40 group-hover:bg-[#8FA9C4] group-hover:text-[#111820] font-semibold shrink-0 transition-colors shadow-md">
+                  <span className="hidden sm:inline-block text-[10px] sm:text-xs font-mono-archive tracking-[0.18em] uppercase px-2.5 py-1 bg-[#1A232E] text-[#BBC6D0] border border-[#8FA9C4]/40 group-hover:bg-[#8FA9C4] group-hover:text-[#111820] font-semibold shrink-0 transition-colors shadow-md">
                     SELECT →
                   </span>
                 )}
@@ -318,12 +414,12 @@ export const ProductVariants: React.FC<ProductVariantsProps> = ({
 
               {/* Garment Image Stage: Permanent Iconic First Full-Set Picture */}
               <div 
-                className="relative w-full aspect-[4/5] max-h-[380px] sm:max-h-[440px] flex items-center justify-center overflow-hidden border border-[#465462]/40 bg-[#151c24] p-2.5 sm:p-3 transition-all duration-500 ease-out"
+                className="relative w-full aspect-[4/5] max-h-[380px] sm:max-h-[440px] flex items-center justify-center overflow-hidden border border-[#8FA9C4]/25 md:border-[#465462]/40 bg-[#19232E] md:bg-[#151c24] p-2 sm:p-3 transition-all duration-500 ease-out"
               >
                 <div 
-                  className="absolute inset-0 pointer-events-none opacity-40"
+                  className="absolute inset-0 pointer-events-none opacity-65 md:opacity-40"
                   style={{
-                    background: 'radial-gradient(ellipse 80% 65% at 50% 50%, #263443 0%, #14191F 100%)',
+                    background: 'radial-gradient(ellipse 80% 65% at 50% 50%, #2C3D4F 0%, #14191F 100%)',
                   }}
                 />
                 <div className="plate-grain absolute inset-0 pointer-events-none opacity-20" />
@@ -336,10 +432,20 @@ export const ProductVariants: React.FC<ProductVariantsProps> = ({
                 />
               </div>
 
-              {/* Bottom Spec Strip: Clean metadata without inventory counts */}
-              <div className="mt-2 sm:mt-3 pt-2 border-t border-[#465462]/40 flex items-center justify-center sm:justify-start text-[10px] sm:text-xs font-mono-archive">
+              {/* Bottom Spec Strip */}
+              <div className="mt-2 sm:mt-3 pt-2 border-t border-[#465462]/50 md:border-[#465462]/40 flex items-center justify-between sm:justify-start gap-1 text-[10px] sm:text-xs font-mono-archive">
                 <span className="text-[#8FA9C4] font-medium tracking-wider uppercase truncate">
-                  Ethically Dyed Slate
+                  <span className="sm:hidden">Dyed Slate</span>
+                  <span className="hidden sm:inline">Ethically Dyed Slate</span>
+                </span>
+                <span
+                  className={`sm:hidden px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-[0.14em] shrink-0 ${
+                    selectedColor === 'blue-charcoal'
+                      ? 'bg-[#A8C2DC] text-[#111820]'
+                      : 'border border-[#8FA9C4]/50 text-[#BBC6D0]'
+                  }`}
+                >
+                  {selectedColor === 'blue-charcoal' ? 'ACTIVE' : 'SELECT →'}
                 </span>
               </div>
             </div>
@@ -348,11 +454,199 @@ export const ProductVariants: React.FC<ProductVariantsProps> = ({
         </div>
 
         {/* ═══════════════════════════════════════════════════════════════
-            DYNAMIC GRID & ASPECT-RATIO ADAPTIVE STAGE
-            Showcases the selected colourway's 5 authentic perspectives
-            Titles ONLY in dedicated box; uncropped photographic frame
+            MOBILE HIGH-CONTRAST HORIZONTAL CATALOGUE STRIP (< 768px)
+            Archival gallery plates with crisp figure-ground contrast & snap scroll
             ═══════════════════════════════════════════════════════════════ */}
-        <div className="mt-10 sm:mt-14 pt-8 sm:pt-10 border-t border-[#D6CCBA]/15">
+        <div className="md:hidden mt-8 pt-6 border-t border-[#D6CCBA]/20">
+          <div className="flex items-end justify-between gap-3 mb-4">
+            <div>
+              <div className="flex items-center gap-2 text-[10px] font-mono-archive tracking-[0.2em] uppercase text-[#D6CCBA]/75 mb-1">
+                <span
+                  className="w-1.5 h-1.5 rounded-full"
+                  style={{ backgroundColor: isBlue ? '#8FA9C4' : '#FF0800' }}
+                />
+                <span>{theme.name.toUpperCase()} CATALOGUE</span>
+              </div>
+              <h3 className="font-serif-editorial text-2xl text-[#FFFFFF] font-light tracking-tight leading-none">
+                Inspect Perspectives
+              </h3>
+            </div>
+            <div className="text-right shrink-0">
+              <span
+                className="text-xs font-mono-archive font-bold tracking-[0.18em] block"
+                style={{ color: isBlue ? '#A8C2DC' : '#F5EFEB' }}
+              >
+                {String(photoIndex + 1).padStart(2, '0')} / {String(photos.length).padStart(2, '0')}
+              </span>
+              <span className="text-[9px] font-mono-archive uppercase tracking-[0.18em] text-[#D6CCBA]/60">
+                SWIPE →
+              </span>
+            </div>
+          </div>
+
+          {/* Horizontal Scroll-Snap Strip with right-edge card peek & per-photo aspect adaptation */}
+          <div
+            ref={mobileStripRef}
+            onScroll={handleMobileStripScroll}
+            className="flex items-center overflow-x-auto snap-x snap-mandatory gap-3.5 px-4 -mx-4 pb-3 no-scrollbar scroll-smooth"
+            role="region"
+            aria-label={`${theme.name} horizontal garment gallery`}
+          >
+            {photos.map((photo, idx) => {
+              const isCardActive = idx === photoIndex;
+              return (
+                <div
+                  key={`${selectedColor}-${photo.id}`}
+                  ref={(el) => {
+                    mobileCardRefs.current[idx] = el;
+                  }}
+                  onClick={() => scrollMobileSlideTo(idx)}
+                  className={`w-[80vw] max-w-[320px] snap-center shrink-0 border-2 transition-all duration-300 shadow-[0_22px_48px_rgba(0,0,0,0.85)] flex flex-col ${
+                    isBlue
+                      ? isCardActive
+                        ? 'bg-[#101419] border-[#8FA9C4] text-[#F0F2F4] scale-100'
+                        : 'bg-[#111820] border-[#465462]/75 text-[#F0F2F4] opacity-85 scale-[0.97]'
+                      : isCardActive
+                        ? 'bg-[#0A0A0A] border-[#D6CCBA] text-[#F5EFEB] scale-100'
+                        : 'bg-[#141414] border-[#D6CCBA]/35 text-[#D6CCBA] opacity-85 scale-[0.97]'
+                  }`}
+                >
+                  {/* Top Deeper-Shade Archival Header */}
+                  <div
+                    className="px-3.5 py-2 flex items-center justify-between border-b"
+                    style={{
+                      borderColor: isBlue ? 'rgba(70, 84, 98, 0.55)' : 'rgba(214, 204, 186, 0.2)',
+                    }}
+                  >
+                    <span
+                      className="text-[10px] font-mono-archive font-bold uppercase tracking-[0.18em]"
+                      style={{ color: isBlue ? '#F0F2F4' : '#FFFFFF' }}
+                    >
+                      PLATE {String(idx + 1).padStart(2, '0')} · {photo.aspectLabel}
+                    </span>
+                    <span
+                      className="text-[9px] font-mono-archive font-semibold uppercase tracking-[0.16em]"
+                      style={{ color: isBlue ? '#8FA9C4' : '#D6CCBA' }}
+                    >
+                      {theme.name}
+                    </span>
+                  </div>
+
+                  {/* Adaptive Studio Photo Stage matching exact photo aspect ratio */}
+                  <div
+                    className="relative w-full overflow-hidden flex items-center justify-center transition-all duration-500 ease-[cubic-bezier(0.16,1,0.3,1)]"
+                    style={{
+                      aspectRatio: photo.aspectRatio,
+                      maxHeight: '58vh',
+                      backgroundColor: isBlue ? '#101419' : '#141414',
+                    }}
+                  >
+                    <div
+                      className="absolute inset-0 pointer-events-none opacity-45"
+                      style={{
+                        background: isBlue
+                          ? 'radial-gradient(ellipse 80% 65% at 50% 50%, #263443 0%, #101419 100%)'
+                          : 'radial-gradient(ellipse 80% 65% at 50% 50%, #2B2A28 0%, #141414 100%)',
+                      }}
+                    />
+                    <div className="plate-grain absolute inset-0 pointer-events-none opacity-20" />
+                    <img
+                      src={photo.src}
+                      alt={`Atelier NOIRÉ ${theme.name} — ${photo.title} (${photo.notes})`}
+                      className="relative z-10 w-full h-full object-contain drop-shadow-[0_14px_26px_rgba(0,0,0,0.85)]"
+                      loading={idx < 3 ? 'eager' : 'lazy'}
+                    />
+                  </div>
+
+                  {/* Contrasted Deep Archival Caption Plinth */}
+                  <div
+                    className="px-3.5 py-3 border-t flex flex-col justify-center"
+                    style={{
+                      borderColor: isBlue ? 'rgba(70, 84, 98, 0.55)' : 'rgba(214, 204, 186, 0.2)',
+                    }}
+                  >
+                    <span
+                      className="text-[11px] font-mono-archive font-bold uppercase tracking-[0.16em] block leading-snug"
+                      style={{ color: isBlue ? '#F0F2F4' : '#FFFFFF' }}
+                    >
+                      {photo.title}
+                    </span>
+                    <p
+                      className="mt-1 text-xs font-sans leading-snug line-clamp-2"
+                      style={{ color: isBlue ? '#BBC6D0' : '#D6CCBA' }}
+                    >
+                      {photo.notes}
+                    </p>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+
+          {/* Synchronized Segmented Progress & 44px Touch Step Controls */}
+          <div className="mt-2.5 flex items-center justify-between gap-3">
+            <div className="flex-1 flex items-center gap-1" role="tablist" aria-label="Select catalogue perspective">
+              {photos.map((photo, idx) => (
+                <button
+                  key={`dot-${photo.id}`}
+                  type="button"
+                  role="tab"
+                  aria-selected={photoIndex === idx}
+                  aria-label={`View perspective ${idx + 1}: ${photo.title}`}
+                  onClick={() => scrollMobileSlideTo(idx)}
+                  className="flex-1 py-3 cursor-pointer flex items-center"
+                >
+                  <span
+                    className="block w-full h-[3px] transition-all duration-300"
+                    style={{
+                      backgroundColor:
+                        photoIndex === idx
+                          ? isBlue
+                            ? '#A8C2DC'
+                            : '#F5EFEB'
+                          : isBlue
+                            ? 'rgba(168, 194, 220, 0.25)'
+                            : 'rgba(245, 239, 235, 0.22)',
+                    }}
+                  />
+                </button>
+              ))}
+            </div>
+
+            <div className="flex items-center gap-2 shrink-0">
+              <button
+                type="button"
+                onClick={handlePrevPhoto}
+                aria-label="Previous catalogue photo"
+                className={`w-11 h-11 flex items-center justify-center border font-mono-archive text-sm font-bold transition-colors cursor-pointer ${
+                  isBlue
+                    ? 'bg-[#1B2A3A] border-[#8FA9C4] text-[#F0F2F4] hover:bg-[#8FA9C4] hover:text-[#111820]'
+                    : 'bg-[#F5EFEB] border-[#F5EFEB] text-[#161616] hover:bg-[#FFFFFF]'
+                }`}
+              >
+                ←
+              </button>
+              <button
+                type="button"
+                onClick={handleNextPhoto}
+                aria-label="Next catalogue photo"
+                className={`w-11 h-11 flex items-center justify-center border font-mono-archive text-sm font-bold transition-colors cursor-pointer ${
+                  isBlue
+                    ? 'bg-[#A8C2DC] border-[#A8C2DC] text-[#111820] hover:bg-[#F0F2F4]'
+                    : 'bg-[#F5EFEB] border-[#F5EFEB] text-[#161616] hover:bg-[#FFFFFF]'
+                }`}
+              >
+                →
+              </button>
+            </div>
+          </div>
+        </div>
+
+        {/* ═══════════════════════════════════════════════════════════════
+            DESKTOP DYNAMIC GRID & ASPECT-RATIO ADAPTIVE STAGE (>= 768px)
+            100% preserved desktop experience
+            ═══════════════════════════════════════════════════════════════ */}
+        <div className="hidden md:block mt-10 sm:mt-14 pt-8 sm:pt-10 border-t border-[#D6CCBA]/15">
           
           {/* Header & Perspective Selection Tabs */}
           <div className="flex flex-col md:flex-row md:items-end justify-between gap-4 mb-6">
@@ -494,21 +788,23 @@ export const ProductVariants: React.FC<ProductVariantsProps> = ({
                 </span>
               </div>
             </div>
+          </div>
+        </div>
 
-            {/* ═══════════════════════════════════════════════════════════════
-                SELECT SIZE & PURCHASING BOX
-                Positioned right below product pictures and product descriptions
-                Off-white in Noir; Contrasted rich slate blue in Blue Charcoal
-                ═══════════════════════════════════════════════════════════════ */}
-            <div 
-              className="mt-6 border-2 p-5 sm:p-7 transition-colors duration-500 shadow-2xl relative"
-              style={{
-                backgroundColor: isBlue ? '#1B2A3A' : '#F5EFEB',
-                borderColor: isBlue ? '#8FA9C4' : '#161616',
-                color: isBlue ? '#F0F2F4' : '#161616',
-                boxShadow: isBlue ? '0 25px 50px -12px rgba(10, 16, 24, 0.85)' : '0 25px 50px -12px rgba(0, 0, 0, 0.75)',
-              }}
-            >
+        {/* ═══════════════════════════════════════════════════════════════
+            SELECT SIZE & PURCHASING BOX (Visible on both Mobile & Desktop)
+            Positioned directly beneath the mobile horizontal catalogue & desktop morphing frame
+            ═══════════════════════════════════════════════════════════════ */}
+        <div
+          id="purchasing-box"
+          className="mt-6 border-2 p-5 sm:p-7 transition-colors duration-500 shadow-2xl relative scroll-mt-28"
+          style={{
+            backgroundColor: isBlue ? '#1B2A3A' : '#F5EFEB',
+            borderColor: isBlue ? '#8FA9C4' : '#161616',
+            color: isBlue ? '#F0F2F4' : '#161616',
+            boxShadow: isBlue ? '0 25px 50px -12px rgba(10, 16, 24, 0.85)' : '0 25px 50px -12px rgba(0, 0, 0, 0.75)',
+          }}
+        >
               <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-5 lg:gap-8">
                 
                 {/* Sizing Controls */}
@@ -865,9 +1161,6 @@ export const ProductVariants: React.FC<ProductVariantsProps> = ({
                 </div>
               </div>
             </div>
-          </div>
-
-        </div>
 
         {/* ═══════════════════════════════════════════════════════════════
             LAYER C: RESTRAINED ARCHIVE SPECIFICATION STRIP

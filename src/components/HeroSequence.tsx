@@ -2,6 +2,17 @@ import React, { useEffect, useRef, useState, useCallback } from 'react';
 import { gsap } from 'gsap';
 import { ScrollTrigger } from 'gsap/ScrollTrigger';
 import { StorytellingAtmosphere } from './StorytellingAtmosphere';
+import { LiquidGlassBar } from './LiquidGlassBar';
+import {
+  STORY_CHAPTERS,
+  STORY_REPLAY_SLIDE_INDEX,
+  TOTAL_STORY_CHAPTERS,
+  getStoryChapterForProgress,
+  getStoryProgressStateForSlide,
+  stepStorySlide,
+  evaluateWheelStoryStep,
+  StoryProgressState,
+} from '../utils/mobileStoryNavigation';
 
 gsap.registerPlugin(ScrollTrigger);
 
@@ -9,12 +20,16 @@ interface HeroSequenceProps {
   isReady?: boolean;
   activeColorway?: 'carbon' | 'blue-charcoal';
   onSelectColorway?: (color: 'carbon' | 'blue-charcoal') => void;
+  onSkipStory?: () => void;
+  onFastExitToArchive?: () => void;
 }
 
 export const HeroSequence: React.FC<HeroSequenceProps> = ({ 
   isReady = true,
   activeColorway = 'carbon',
-  onSelectColorway 
+  onSelectColorway,
+  onSkipStory,
+  onFastExitToArchive,
 }) => {
   const containerRef = useRef<HTMLDivElement>(null);
   const stageRef = useRef<HTMLDivElement>(null);
@@ -48,7 +63,26 @@ export const HeroSequence: React.FC<HeroSequenceProps> = ({
 
   // Colourway slide state: 0 = Carbon Noir (2026-10-24), 1 = Blue Charcoal (_MG_5014)
   const [activeSlide, setActiveSlide] = useState<number>(activeColorway === 'blue-charcoal' ? 1 : 0);
-  const [videoDuration, setVideoDuration] = useState<number>(4.546);
+  const videoDurationRef = useRef<number>(4.546);
+  const [isMobileViewport, setIsMobileViewport] = useState<boolean>(() => {
+    if (typeof window === 'undefined') return false;
+    return window.matchMedia('(max-width: 767px)').matches;
+  });
+  const [storyState, setStoryState] = useState<StoryProgressState>(() =>
+    getStoryChapterForProgress(0)
+  );
+  const mobileStepRef = useRef<number>(0);
+  const lastWheelStepTimeRef = useRef<number>(0);
+  const lastWheelDeltaAbsRef = useRef<number>(0);
+  const lastWheelDirRef = useRef<1 | -1 | 0>(0);
+
+  useEffect(() => {
+    const mq = window.matchMedia('(max-width: 767px)');
+    const syncViewport = () => setIsMobileViewport(mq.matches);
+    syncViewport();
+    mq.addEventListener('change', syncViewport);
+    return () => mq.removeEventListener('change', syncViewport);
+  }, []);
 
   // Sync internal slide with external colourway prop
   useEffect(() => {
@@ -127,22 +161,41 @@ export const HeroSequence: React.FC<HeroSequenceProps> = ({
       gsap.set(totebagTextRef.current, { opacity: 0, y: 30, pointerEvents: 'none' });
       gsap.set(ownDifferenceRef.current, { opacity: 0, y: 28, scale: 0.96, pointerEvents: 'none' });
 
-      // ──────────────── PINNED SCROLL-SCRUB STORYTELLING SEQUENCE ────────────────
+      // ──────────────── STORYTELLING TIMELINE (DESKTOP SCRUB vs MOBILE DISCRETE SLIDES) ────────────────
       if (stageRef.current) {
         const isTouch = typeof window !== 'undefined' && ('ontouchstart' in window || navigator.maxTouchPoints > 0);
+        const useDiscreteMobile = isMobileViewport;
 
-        const scrubTl = gsap.timeline({
-          scrollTrigger: {
-            trigger: stageRef.current,
-            start: 'top top',
-            end: '+=840%',
-            pin: true,
-            scrub: isTouch ? 0.45 : 0.75,
-            anticipatePin: 1,
-            fastScrollEnd: true,
-            invalidateOnRefresh: true,
-          },
-        });
+        const scrubTl = gsap.timeline(
+          useDiscreteMobile
+            ? { paused: true }
+            : {
+                scrollTrigger: {
+                  id: 'hero-story',
+                  trigger: stageRef.current,
+                  start: 'top top',
+                  end: '+=840%',
+                  pin: true,
+                  scrub: isTouch ? 0.45 : 0.75,
+                  anticipatePin: 1,
+                  fastScrollEnd: true,
+                  invalidateOnRefresh: true,
+                  onUpdate: (self) => {
+                    const next = getStoryChapterForProgress(self.progress);
+                    setStoryState((prev) => {
+                      if (
+                        prev.chapter.index === next.chapter.index &&
+                        prev.isStoryActive === next.isStoryActive &&
+                        prev.percent === next.percent
+                      ) {
+                        return prev;
+                      }
+                      return next;
+                    });
+                  },
+                },
+              }
+        );
 
         // ── Phase 0 (0.0 -> 0.6): Opening hero elements fade out cleanly ──
         scrubTl.fromTo([heroHeadRef.current, heroFootRef.current], 
@@ -232,13 +285,15 @@ export const HeroSequence: React.FC<HeroSequenceProps> = ({
         // Scrub video playback smoothly
         const videoProxy = { time: 0 };
         scrubTl.to(videoProxy, {
-          time: videoDuration || 4.546,
+          time: videoDurationRef.current || 4.546,
           duration: 1.15,
           ease: 'none',
           immediateRender: false,
           onUpdate: () => {
             if (videoRef.current && isFinite(videoRef.current.duration) && videoRef.current.duration > 0) {
-              const boundedTime = Math.min(videoRef.current.duration, Math.max(0, videoProxy.time));
+              const targetDuration = videoRef.current.duration;
+              const normalized = videoProxy.time / (videoDurationRef.current || 4.546);
+              const boundedTime = Math.min(targetDuration, Math.max(0, normalized * targetDuration));
               videoRef.current.currentTime = boundedTime;
             }
           },
@@ -396,11 +451,199 @@ export const HeroSequence: React.FC<HeroSequenceProps> = ({
             immediateRender: false,
           }, 9.8);
         }
+
+        // Attach discrete mobile one-slide-per-swipe & wheel listener (keeps animation identical, snappier 1-slide steps)
+        if (useDiscreteMobile) {
+          const stageEl = stageRef.current;
+
+          const syncTouchActionForStep = (stepIdx: number) => {
+            stageEl.style.touchAction =
+              stepIdx >= STORY_CHAPTERS.length - 1 ? 'pan-y' : 'pan-x';
+          };
+
+          syncTouchActionForStep(mobileStepRef.current);
+          if (mobileStepRef.current > 0) {
+            scrubTl.pause(STORY_CHAPTERS[mobileStepRef.current].time);
+          }
+
+          const goToDiscreteStep = (stepIndex: number) => {
+            const bounded = Math.max(0, Math.min(STORY_CHAPTERS.length - 1, stepIndex));
+            mobileStepRef.current = bounded;
+            syncTouchActionForStep(bounded);
+            setStoryState(getStoryProgressStateForSlide(bounded));
+
+            scrubTl.tweenTo(STORY_CHAPTERS[bounded].time, {
+              duration: 0.44,
+              ease: 'power2.out',
+              overwrite: 'auto',
+            });
+
+            if (videoRef.current) {
+              if (bounded === 1) {
+                videoRef.current.currentTime = 0;
+                videoRef.current.play().catch(() => {});
+              } else {
+                videoRef.current.pause();
+              }
+            }
+          };
+
+          let gestureStartX = 0;
+          let gestureStartY = 0;
+          let gestureConsumed = false;
+
+          const onTouchStart = (e: TouchEvent) => {
+            if (!e.touches.length) return;
+            gestureStartX = e.touches[0].clientX;
+            gestureStartY = e.touches[0].clientY;
+            gestureConsumed = false;
+          };
+
+          const onTouchMove = (e: TouchEvent) => {
+            if (!isReady || !e.touches.length) return;
+            if (window.scrollY > 14) return;
+
+            const dx = e.touches[0].clientX - gestureStartX;
+            const dy = e.touches[0].clientY - gestureStartY;
+
+            // Leave horizontal figure / totebag swipes completely untouched
+            if (Math.abs(dx) > Math.abs(dy) * 1.15) return;
+
+            const dir: 1 | -1 = dy < 0 ? 1 : -1;
+            const stepResult = stepStorySlide({
+              currentStep: mobileStepRef.current,
+              direction: dir,
+            });
+
+            // At the start pulling down (refresh) allow natural scroll
+            if (dir === -1 && mobileStepRef.current === 0) {
+              return;
+            }
+
+            // On final slide (Slide 7) swiping downward to enter Garment Archive:
+            // Arrest raw thumb momentum and smoothly land on #ledger so fast swipes never overshoot it
+            if (stepResult.shouldExitToArchive) {
+              if (onFastExitToArchive) {
+                e.preventDefault();
+                e.stopPropagation();
+                if (!gestureConsumed && Math.abs(dy) >= 18) {
+                  gestureConsumed = true;
+                  onFastExitToArchive();
+                }
+              }
+              return;
+            }
+
+            // Hold viewport pinned at y=0 while stepping through slides 0..7
+            e.preventDefault();
+            e.stopPropagation();
+
+            // Trigger 1 discrete slide immediately per touch gesture — never locked out by prior animation
+            if (!gestureConsumed && Math.abs(dy) >= 20 && stepResult.changed) {
+              gestureConsumed = true;
+              goToDiscreteStep(stepResult.nextStep);
+            }
+          };
+
+          const onWheel = (e: WheelEvent) => {
+            if (!isReady) return;
+            if (window.scrollY > 14) return;
+            if (Math.abs(e.deltaY) < 8) return;
+
+            const dir: 1 | -1 = e.deltaY > 0 ? 1 : -1;
+            const stepResult = stepStorySlide({
+              currentStep: mobileStepRef.current,
+              direction: dir,
+            });
+
+            if (dir === -1 && mobileStepRef.current === 0) {
+              return;
+            }
+
+            if (stepResult.shouldExitToArchive) {
+              if (onFastExitToArchive) {
+                e.preventDefault();
+                e.stopPropagation();
+                const now = performance.now();
+                const evaluation = evaluateWheelStoryStep({
+                  deltaY: e.deltaY,
+                  nowMs: now,
+                  lastStepTimeMs: lastWheelStepTimeRef.current,
+                  lastStepDeltaAbs: lastWheelDeltaAbsRef.current,
+                  lastDirection: lastWheelDirRef.current,
+                });
+                if (evaluation.shouldTrigger) {
+                  lastWheelStepTimeRef.current = now;
+                  lastWheelDeltaAbsRef.current = Math.abs(e.deltaY);
+                  lastWheelDirRef.current = dir;
+                  onFastExitToArchive();
+                }
+              }
+              return;
+            }
+
+            e.preventDefault();
+            e.stopPropagation();
+
+            const now = performance.now();
+            const evaluation = evaluateWheelStoryStep({
+              deltaY: e.deltaY,
+              nowMs: now,
+              lastStepTimeMs: lastWheelStepTimeRef.current,
+              lastStepDeltaAbs: lastWheelDeltaAbsRef.current,
+              lastDirection: lastWheelDirRef.current,
+            });
+
+            if (evaluation.shouldTrigger && stepResult.changed) {
+              lastWheelStepTimeRef.current = now;
+              lastWheelDeltaAbsRef.current = Math.abs(e.deltaY);
+              lastWheelDirRef.current = dir;
+              goToDiscreteStep(stepResult.nextStep);
+            }
+          };
+
+          const onReplayEvent = () => {
+            scrubTl.pause(0);
+            mobileStepRef.current = 0;
+            lastWheelStepTimeRef.current = 0;
+            lastWheelDeltaAbsRef.current = 0;
+            lastWheelDirRef.current = 0;
+            goToDiscreteStep(STORY_REPLAY_SLIDE_INDEX);
+          };
+
+          const onSkipEvent = () => {
+            const lastIdx = STORY_CHAPTERS.length - 1;
+            mobileStepRef.current = lastIdx;
+            syncTouchActionForStep(lastIdx);
+            scrubTl.pause(STORY_CHAPTERS[lastIdx].time);
+            setStoryState(getStoryProgressStateForSlide(lastIdx));
+            if (videoRef.current) {
+              videoRef.current.pause();
+            }
+          };
+
+          stageEl.addEventListener('touchstart', onTouchStart, { passive: true });
+          stageEl.addEventListener('touchmove', onTouchMove, { passive: false });
+          stageEl.addEventListener('wheel', onWheel, { passive: false });
+          window.addEventListener('noire:replay-story', onReplayEvent);
+          window.addEventListener('noire:skip-story', onSkipEvent);
+
+          return () => {
+            stageEl.style.touchAction = '';
+            stageEl.removeEventListener('touchstart', onTouchStart);
+            stageEl.removeEventListener('touchmove', onTouchMove);
+            stageEl.removeEventListener('wheel', onWheel);
+            window.removeEventListener('noire:replay-story', onReplayEvent);
+            window.removeEventListener('noire:skip-story', onSkipEvent);
+          };
+        }
       }
     }, containerRef);
 
-    return () => ctx.revert();
-  }, [isReady, videoDuration]);
+    return () => {
+      ctx.revert();
+    };
+  }, [isReady, isMobileViewport, onFastExitToArchive]);
 
   return (
     <div 
@@ -432,15 +675,93 @@ export const HeroSequence: React.FC<HeroSequenceProps> = ({
           style={{ opacity: 0 }}
         />
 
-        {/* Top Metadata Strip: Strict Alignment */}
+        {/* Top Metadata Strip: Desktop centered datum preserved; Mobile stripped of extra text with refined architectural Skip link */}
         <div 
           ref={topMetaRef}
-          className="absolute top-20 left-0 right-0 z-30 pointer-events-none px-6 sm:px-8 md:px-12 lg:px-16"
+          className="absolute top-[4.5rem] md:top-20 left-0 right-0 z-40 pointer-events-none px-4 sm:px-8 md:px-12 lg:px-16"
         >
-          <div className="max-w-7xl mx-auto flex items-center justify-center text-[11px] md:text-xs font-mono-archive tracking-[0.2em] text-[#D6CCBA]/55 border-b border-[#D6CCBA]/10 pb-2.5">
+          {/* Desktop & Tablet: Original centered datum strip */}
+          <div className="hidden md:flex max-w-7xl mx-auto items-center justify-center text-xs font-mono-archive tracking-[0.2em] text-[#D6CCBA]/55 border-b border-[#D6CCBA]/10 pb-2.5">
             <span>TWO COLOURWAYS · 88 NUMBERED SETS</span>
           </div>
+
+          {/* Mobile: Apple Liquid Glass Skip capsule with SVG chromatic displacement */}
+          {onSkipStory && (
+            <div className="flex md:hidden items-center justify-end">
+              <LiquidGlassBar
+                as="button"
+                type="button"
+                onClick={onSkipStory}
+                frostOpacity={0.2}
+                saturation={1.3}
+                className="pointer-events-auto inline-flex items-center justify-center min-h-[36px] sm:min-h-[38px] px-3.5 sm:px-4 py-1.5 border border-white/15 font-mono-archive text-[10px] sm:text-[11px] font-medium uppercase tracking-[0.18em] sm:tracking-[0.2em] text-[#F5EFEB] hover:text-white transition-transform duration-200 cursor-pointer whitespace-nowrap active:scale-[0.97]"
+              >
+                <span style={{ textShadow: '0 1px 2px rgba(0, 0, 0, 0.45)' }}>Skip intro</span>
+                <span aria-hidden="true" className="text-[#FF0800] font-bold">→</span>
+              </LiquidGlassBar>
+            </div>
+          )}
         </div>
+
+        {/* Mobile Active Storytelling Apple Liquid Glass Bar (<768px) */}
+        {onSkipStory && (
+          <div
+            className={`md:hidden absolute top-[4.5rem] sm:top-[4.75rem] inset-x-2.5 min-[375px]:inset-x-3.5 sm:inset-x-6 z-[45] transition-all duration-500 ease-[cubic-bezier(0.22,1,0.36,1)] ${
+              storyState.isStoryActive
+                ? 'opacity-100 translate-y-0 scale-100 pointer-events-auto'
+                : 'opacity-0 -translate-y-1.5 scale-[0.98] pointer-events-none'
+            }`}
+            aria-hidden={!storyState.isStoryActive}
+          >
+            <LiquidGlassBar
+              frostOpacity={0.22}
+              saturation={1.25}
+              className="w-full max-w-[540px] mx-auto px-3 min-[375px]:px-3.5 sm:px-4.5 py-2 sm:py-2.5 border border-white/15"
+            >
+              <div className="flex items-center justify-between gap-1.5 min-[375px]:gap-2.5 sm:gap-3">
+                <div
+                  className="min-w-0 flex-1 flex items-center gap-1 min-[375px]:gap-1.5 text-[8.5px] min-[375px]:text-[9.5px] sm:text-[11px] font-mono-archive uppercase tracking-[0.08em] min-[375px]:tracking-[0.14em] sm:tracking-[0.18em] text-white"
+                  style={{ textShadow: '0 1px 3px rgba(0, 0, 0, 0.55)' }}
+                >
+                  <span className="text-[#FF0800] font-bold shrink-0">
+                    {storyState.chapter.code}/0{TOTAL_STORY_CHAPTERS}
+                  </span>
+                  <span className="text-white/45 shrink-0" aria-hidden="true">·</span>
+                  <span className="truncate text-[#F5EFEB]/95">{storyState.chapter.label}</span>
+                </div>
+
+                <button
+                  type="button"
+                  onClick={onSkipStory}
+                  tabIndex={storyState.isStoryActive ? 0 : -1}
+                  className="min-h-[28px] min-[375px]:min-h-[32px] sm:min-h-[34px] px-2 min-[375px]:px-2.5 sm:px-3.5 py-1 rounded-full bg-white/12 hover:bg-white/22 border border-white/20 font-mono-archive text-[8.5px] min-[375px]:text-[9.5px] sm:text-[10.5px] font-medium uppercase tracking-[0.1em] min-[375px]:tracking-[0.15em] sm:tracking-[0.18em] text-white transition-all duration-200 cursor-pointer whitespace-nowrap shrink-0 flex items-center gap-1 sm:gap-1.5 active:scale-[0.97]"
+                  style={{
+                    boxShadow: 'inset 0 1px 0 rgba(255, 255, 255, 0.28)',
+                    textShadow: '0 1px 2px rgba(0, 0, 0, 0.45)',
+                  }}
+                >
+                  <span>Skip intro</span>
+                  <span aria-hidden="true" className="text-[#FF0800] font-bold">→</span>
+                </button>
+              </div>
+
+              {/* Integrated inner liquid progress filament */}
+              <div
+                className="mt-2 mx-1.5 sm:mx-2 h-[2px] rounded-full bg-white/15 overflow-hidden"
+                role="progressbar"
+                aria-label="Storytelling slide progress"
+                aria-valuemin={0}
+                aria-valuemax={100}
+                aria-valuenow={storyState.percent}
+              >
+                <div
+                  className="h-full rounded-full bg-white/90 shadow-[0_0_8px_rgba(255,255,255,0.65)] transition-[width] duration-300 ease-out"
+                  style={{ width: `${storyState.percent}%` }}
+                />
+              </div>
+            </LiquidGlassBar>
+          </div>
+        )}
 
         {/* Layer 1 (BEHIND HERO FIGURE): Mathematically Centered Symmetrical Red Extenda Wordmark */}
         <div 
@@ -527,6 +848,10 @@ export const HeroSequence: React.FC<HeroSequenceProps> = ({
               <span className="italic font-light text-[#D6CCBA]/85">Taken a little</span><br />
               <span className="italic font-light text-[#D6CCBA]/85">too seriously.</span>
             </h1>
+            <p className="md:hidden mt-2.5 flex items-center gap-1.5 text-[10px] font-mono-archive uppercase tracking-[0.16em] text-[#D6CCBA]/75 whitespace-nowrap">
+              <span className="text-[#FF0800] font-bold" aria-hidden="true">↓</span>
+              <span>Swipe up for next slide · Swipe figure</span>
+            </p>
           </div>
 
           {/* Bottom Row: Right Archive Registry Spec Stamp */}
@@ -621,7 +946,9 @@ export const HeroSequence: React.FC<HeroSequenceProps> = ({
                     preload="auto"
                     muted 
                     playsInline 
-                    onLoadedMetadata={(e) => setVideoDuration(e.currentTarget.duration || 4.546)}
+                    onLoadedMetadata={(e) => {
+                      videoDurationRef.current = e.currentTarget.duration || 4.546;
+                    }}
                     className="w-full h-auto max-h-[40vh] sm:max-h-[44vh] lg:max-h-[54vh] object-cover filter contrast-[1.08] brightness-95"
                     aria-label="Artisan measuring and needle setup in studio"
                   />

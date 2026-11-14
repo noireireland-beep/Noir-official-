@@ -597,3 +597,23 @@
     justify-content: space-between;
   }
 }
+
+@media (max-width: 360px) {
+  .noire-header {
+    --header-gutter: 0.75rem;
+  }
+
+  .noire-header__zone--utility::after {
+    display: none;
+  }
+
+  .noire-brand__wordmark {
+    font-size: 0.6875rem;
+    letter-spacing: 0.1em;
+  }
+
+  .noire-selection-btn {
+    font-size: 0.625rem;
+    letter-spacing: 0.08em;
+  }
+}

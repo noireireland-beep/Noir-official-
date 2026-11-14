@@ -16,6 +16,16 @@ import { Footer } from './components/Footer';
 import { PolaroidSection } from './components/PolaroidSection';
 import { ArchivePreloader } from './components/ArchivePreloader';
 import { CustomerCareModal, CareModalTab } from './components/CustomerCareModal';
+import {
+  computeArchiveTargetScrollY,
+  computeStoryReplayScrollY,
+} from './utils/mobileStoryNavigation';
+import {
+  ArchiveGuardState,
+  INITIAL_ARCHIVE_GUARD_STATE,
+  computeArchiveLandmarks,
+  evaluateArchiveScrollGuard,
+} from './utils/archiveScrollGuard';
 
 const AdminDashboard = React.lazy(() =>
   import('./components/AdminDashboard').then((m) => ({ default: m.AdminDashboard }))
@@ -41,8 +51,17 @@ export default function App() {
   const [isCareModalOpen, setIsCareModalOpen] = useState<boolean>(false);
   const [careModalTab, setCareModalTab] = useState<CareModalTab>('returns');
   const [isArchiveReady, setIsArchiveReady] = useState<boolean>(false);
+  const [transitionLabel, setTransitionLabel] = useState<string>('ENTERING ARCHIVE');
   const isArchiveReadyRef = React.useRef<boolean>(false);
   const lenisRef = React.useRef<Lenis | null>(null);
+  const transitionCurtainRef = React.useRef<HTMLDivElement | null>(null);
+  const isStoryTransitioningRef = React.useRef<boolean>(false);
+  const archiveGuardStateRef = React.useRef<ArchiveGuardState>({ ...INITIAL_ARCHIVE_GUARD_STATE });
+  const prevScrollYRef = React.useRef<number>(0);
+  const lastNativeScrollTimeRef = React.useRef<number>(0);
+  const isGuardSettlingRef = React.useRef<boolean>(false);
+  const guardUnlockTimerRef = React.useRef<number | null>(null);
+  const isModalOpenRef = React.useRef<boolean>(false);
 
   useEffect(() => {
     const handleLocationChange = () => {
@@ -88,6 +107,7 @@ export default function App() {
 
   // Disable background scrolling while inside acquisition dossier or client care modal
   useEffect(() => {
+    isModalOpenRef.current = isCartOpen || isCareModalOpen;
     if (isAdminRoute) return;
 
     if (isCartOpen || isCareModalOpen) {
@@ -129,6 +149,7 @@ export default function App() {
       wheelMultiplier: 0.95,
       touchMultiplier: 1.1,
       syncTouch: false, // Ensures natural non-blocking touch scroll momentum on mobile
+      virtualScroll: () => !isGuardSettlingRef.current,
     });
 
     lenisRef.current = lenis;
@@ -142,7 +163,164 @@ export default function App() {
       });
     }
 
-    lenis.on('scroll', ScrollTrigger.update);
+    const getLiveArchiveLandmarks = () => {
+      const ledgerEl = document.getElementById('ledger');
+      const purchasingEl = document.getElementById('purchasing-box') || ledgerEl;
+      if (!ledgerEl || !purchasingEl) return null;
+      const headerEl = document.getElementById('noire-header');
+      const headerHeight = headerEl ? Math.round(headerEl.getBoundingClientRect().height) : 76;
+      const ledgerRect = ledgerEl.getBoundingClientRect();
+      const purchasingRect = purchasingEl.getBoundingClientRect();
+
+      return computeArchiveLandmarks({
+        ledgerTopRect: ledgerRect.top,
+        purchasingTopRect: purchasingRect.top,
+        purchasingBottomRect: purchasingRect.bottom,
+        currentScrollY: window.scrollY,
+        viewportHeight: window.innerHeight,
+        headerHeight,
+      });
+    };
+
+    const settleScrollToLandmark = (targetY: number) => {
+      isGuardSettlingRef.current = true;
+      prevScrollYRef.current = targetY;
+
+      if (guardUnlockTimerRef.current !== null) {
+        window.clearTimeout(guardUnlockTimerRef.current);
+      }
+
+      const shouldArrestMobileMomentum = isTouch && window.innerWidth < 768;
+      if (shouldArrestMobileMomentum) {
+        document.body.style.overflow = 'hidden';
+      }
+
+      const releaseGuard = () => {
+        if (guardUnlockTimerRef.current !== null) {
+          window.clearTimeout(guardUnlockTimerRef.current);
+          guardUnlockTimerRef.current = null;
+        }
+        if (shouldArrestMobileMomentum && !isModalOpenRef.current) {
+          document.body.style.overflow = '';
+        }
+        prevScrollYRef.current = window.scrollY;
+        isGuardSettlingRef.current = false;
+      };
+
+      guardUnlockTimerRef.current = window.setTimeout(releaseGuard, 580);
+
+      lenis.scrollTo(targetY, {
+        duration: 0.46,
+        lock: true,
+        force: true,
+        userData: { archiveGuard: true },
+        onComplete: () => {
+          window.setTimeout(releaseGuard, 90);
+        },
+      });
+    };
+
+    prevScrollYRef.current = window.scrollY;
+    lastNativeScrollTimeRef.current = performance.now();
+
+    lenis.on('scroll', (instance) => {
+      ScrollTrigger.update();
+
+      if (
+        !isArchiveReadyRef.current ||
+        isModalOpenRef.current ||
+        isStoryTransitioningRef.current
+      ) {
+        prevScrollYRef.current = instance.animatedScroll;
+        lastNativeScrollTimeRef.current = performance.now();
+        return;
+      }
+
+      if (isGuardSettlingRef.current) {
+        prevScrollYRef.current = instance.animatedScroll;
+        lastNativeScrollTimeRef.current = performance.now();
+        return;
+      }
+
+      const now = performance.now();
+      const dtFrames = Math.max(1, (now - lastNativeScrollTimeRef.current) / 16.67);
+      lastNativeScrollTimeRef.current = now;
+
+      const landmarks = getLiveArchiveLandmarks();
+      if (!landmarks) {
+        prevScrollYRef.current = instance.animatedScroll;
+        return;
+      }
+
+      const rawStep = instance.animatedScroll - prevScrollYRef.current;
+      const effectiveVelocity =
+        Math.abs(instance.velocity) >= Math.abs(rawStep / dtFrames)
+          ? instance.velocity
+          : rawStep / dtFrames;
+
+      const decision = evaluateArchiveScrollGuard({
+        prevY: prevScrollYRef.current,
+        currentY: instance.animatedScroll,
+        projectedTargetY: instance.targetScroll,
+        velocityPx: effectiveVelocity,
+        landmarks,
+        state: archiveGuardStateRef.current,
+      });
+
+      archiveGuardStateRef.current = decision.nextState;
+      prevScrollYRef.current = instance.animatedScroll;
+
+      if (decision.shouldCatch) {
+        settleScrollToLandmark(decision.targetY);
+      }
+    });
+
+    const handleHashLinkClick = (e: MouseEvent) => {
+      const target = e.target as HTMLElement | null;
+      const anchor = target?.closest('a[href^="#"]') as HTMLAnchorElement | null;
+      if (!anchor) return;
+      const href = anchor.getAttribute('href');
+      if (!href || href === '#') return;
+      const id = href.slice(1);
+      const destEl = document.getElementById(id);
+      if (!destEl) return;
+
+      e.preventDefault();
+      isGuardSettlingRef.current = true;
+      if (guardUnlockTimerRef.current !== null) {
+        window.clearTimeout(guardUnlockTimerRef.current);
+      }
+      if (id === 'ledger' || id === 'product-acquisition') {
+        archiveGuardStateRef.current.caughtEntry = true;
+      } else if (id === 'fit-reference') {
+        archiveGuardStateRef.current.caughtEntry = true;
+        archiveGuardStateRef.current.caughtPurchasing = true;
+      } else if (id === 'hero-stage' || id === 'top') {
+        archiveGuardStateRef.current = { ...INITIAL_ARCHIVE_GUARD_STATE };
+      }
+
+      const headerEl = document.getElementById('noire-header');
+      const headerHeight = headerEl ? Math.round(headerEl.getBoundingClientRect().height) : 76;
+      const destY = id === 'top' || id === 'hero-stage'
+        ? 0
+        : Math.max(0, Math.round(destEl.getBoundingClientRect().top + window.scrollY - headerHeight));
+
+      lenis.scrollTo(destY, {
+        duration: 0.65,
+        lock: true,
+        force: true,
+        userData: { archiveGuard: true },
+        onComplete: () => {
+          prevScrollYRef.current = window.scrollY;
+          isGuardSettlingRef.current = false;
+        },
+      });
+      guardUnlockTimerRef.current = window.setTimeout(() => {
+        prevScrollYRef.current = window.scrollY;
+        isGuardSettlingRef.current = false;
+      }, 750);
+    };
+    document.addEventListener('click', handleHashLinkClick);
 
     const updateRaf = (time: number) => {
       lenis.raf(time * 1000);
@@ -174,9 +352,14 @@ export default function App() {
     window.addEventListener('orientationchange', handleOrientation);
 
     return () => {
+      document.removeEventListener('click', handleHashLinkClick);
       window.removeEventListener('load', handleDeferredRefresh);
       window.removeEventListener('orientationchange', handleOrientation);
       clearTimeout(orientationTimer);
+      if (guardUnlockTimerRef.current !== null) {
+        window.clearTimeout(guardUnlockTimerRef.current);
+        guardUnlockTimerRef.current = null;
+      }
       gsap.ticker.remove(updateRaf);
       lenis.destroy();
       lenisRef.current = null;
@@ -226,6 +409,126 @@ export default function App() {
     });
   }, []);
 
+  const runAnimatedSectionJump = React.useCallback((mode: 'to-archive' | 'to-story') => {
+    if (isStoryTransitioningRef.current) return;
+
+    const resolveTargetY = (): number => {
+      if (mode === 'to-archive') {
+        const ledgerEl = document.getElementById('ledger');
+        if (!ledgerEl) return window.scrollY;
+        const headerEl = document.getElementById('noire-header');
+        const headerHeight = headerEl ? Math.round(headerEl.getBoundingClientRect().height) : 72;
+        return computeArchiveTargetScrollY({
+          ledgerTop: ledgerEl.getBoundingClientRect().top,
+          currentScrollY: window.scrollY,
+          headerHeight,
+        });
+      }
+
+      const heroTrigger = ScrollTrigger.getById('hero-story');
+      return computeStoryReplayScrollY({
+        storyStart: heroTrigger?.start ?? 0,
+        storyEnd: heroTrigger?.end ?? 0,
+      });
+    };
+
+    const isReducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+    const curtain = transitionCurtainRef.current;
+
+    if (isReducedMotion || !curtain) {
+      window.dispatchEvent(new CustomEvent(mode === 'to-archive' ? 'noire:skip-story' : 'noire:replay-story'));
+      const targetY = resolveTargetY();
+      window.scrollTo(0, targetY);
+      lenisRef.current?.scrollTo(targetY, { immediate: true, force: true });
+      ScrollTrigger.update();
+      return;
+    }
+
+    isStoryTransitioningRef.current = true;
+    setTransitionLabel(mode === 'to-archive' ? 'GARMENT ARCHIVE' : 'ARCHIVE STORYTELLING');
+    lenisRef.current?.stop();
+
+    gsap.killTweensOf(curtain);
+    const tl = gsap.timeline({
+      onComplete: () => {
+        gsap.set(curtain, { display: 'none' });
+        lenisRef.current?.start();
+        isStoryTransitioningRef.current = false;
+      },
+    });
+
+    tl.set(curtain, { display: 'flex', yPercent: 100, opacity: 1 })
+      .to(curtain, {
+        yPercent: 0,
+        duration: 0.34,
+        ease: 'power3.inOut',
+      })
+      .add(() => {
+        window.dispatchEvent(new CustomEvent(mode === 'to-archive' ? 'noire:skip-story' : 'noire:replay-story'));
+        const targetY = resolveTargetY();
+        window.scrollTo(0, targetY);
+        lenisRef.current?.scrollTo(targetY, { immediate: true, force: true });
+        ScrollTrigger.refresh();
+        ScrollTrigger.update();
+      })
+      .to(curtain, {
+        yPercent: -100,
+        duration: 0.44,
+        delay: 0.08,
+        ease: 'power3.out',
+      });
+  }, []);
+
+  const handleSkipStory = React.useCallback(() => {
+    archiveGuardStateRef.current.caughtEntry = true;
+    runAnimatedSectionJump('to-archive');
+  }, [runAnimatedSectionJump]);
+
+  const handleReplayStory = React.useCallback(() => {
+    archiveGuardStateRef.current = { ...INITIAL_ARCHIVE_GUARD_STATE };
+    runAnimatedSectionJump('to-story');
+  }, [runAnimatedSectionJump]);
+
+  const handleFastExitToArchive = React.useCallback(() => {
+    const ledgerEl = document.getElementById('ledger');
+    if (!ledgerEl) return;
+    const headerEl = document.getElementById('noire-header');
+    const headerHeight = headerEl ? Math.round(headerEl.getBoundingClientRect().height) : 76;
+    const targetY = computeArchiveTargetScrollY({
+      ledgerTop: ledgerEl.getBoundingClientRect().top,
+      currentScrollY: window.scrollY,
+      headerHeight,
+    });
+
+    archiveGuardStateRef.current.caughtEntry = true;
+    isGuardSettlingRef.current = true;
+    prevScrollYRef.current = targetY;
+
+    if (guardUnlockTimerRef.current !== null) {
+      window.clearTimeout(guardUnlockTimerRef.current);
+    }
+
+    if (lenisRef.current) {
+      lenisRef.current.scrollTo(targetY, {
+        duration: 0.48,
+        lock: true,
+        force: true,
+        userData: { archiveGuard: true },
+        onComplete: () => {
+          prevScrollYRef.current = window.scrollY;
+          isGuardSettlingRef.current = false;
+        },
+      });
+    } else {
+      window.scrollTo({ top: targetY, behavior: 'smooth' });
+    }
+
+    guardUnlockTimerRef.current = window.setTimeout(() => {
+      prevScrollYRef.current = window.scrollY;
+      isGuardSettlingRef.current = false;
+    }, 580);
+  }, []);
+
   const handleOpenCareModal = (tab: CareModalTab = 'returns') => {
     setCareModalTab(tab);
     setIsCareModalOpen(true);
@@ -258,6 +561,30 @@ export default function App() {
         <ArchivePreloader onComplete={handlePreloaderComplete} />
       )}
 
+      {/* Animated Mobile Story Skip / Replay Editorial Curtain */}
+      <div
+        ref={transitionCurtainRef}
+        aria-hidden="true"
+        className="fixed inset-0 z-[75] hidden flex-col items-center justify-center bg-[#161616] px-6 text-center pointer-events-none select-none will-change-transform"
+        style={{ display: 'none' }}
+      >
+        <div
+          className="absolute inset-0 pointer-events-none"
+          style={{
+            background: 'radial-gradient(ellipse 80% 60% at 50% 45%, #2B2A28 0%, #161616 78%)',
+          }}
+        />
+        <div className="relative z-10 flex flex-col items-center gap-2.5">
+          <span className="text-[10px] font-mono-archive tracking-[0.28em] uppercase text-[#D6CCBA]/60">
+            ATELIER NOIRÉ
+          </span>
+          <span className="font-serif-editorial text-2xl tracking-[0.06em] text-[#FFFFFF]">
+            {transitionLabel}
+          </span>
+          <span className="w-12 h-px bg-[#D6CCBA]/45 mt-1" />
+        </div>
+      </div>
+
       {/* 3-Zone Luxury Architectural Navigation */}
       <Navigation 
         onOpenCart={() => setIsCartOpen(true)} 
@@ -272,6 +599,8 @@ export default function App() {
           isReady={isArchiveReady} 
           activeColorway={selectedColor}
           onSelectColorway={setSelectedColor}
+          onSkipStory={handleSkipStory}
+          onFastExitToArchive={handleFastExitToArchive}
         />
 
         {/* Chapter 03: Editorial Garment Archive & Acquisition Catalogue (Layers A, B, C & Merged Fit Reference at bottom) */}
@@ -280,6 +609,7 @@ export default function App() {
           onSelectColor={setSelectedColor}
           onAddToCart={handleAddToCart}
           onOpenCareModal={handleOpenCareModal}
+          onReplayStory={handleReplayStory}
         />
 
         {/* Tactile Commemorative Polaroid Section — with zero external text below lookbook measurements note */}
