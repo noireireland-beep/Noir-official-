@@ -62,7 +62,7 @@ export const CustomerCareModal: React.FC<CustomerCareModalProps> = ({
 
   const tabs: { id: CareModalTab; label: string; code: string; badge?: string }[] = [
     { id: 'returns', code: '01', label: 'Returns & 14-Day Rights', badge: 'STATUTORY' },
-    { id: 'shipping', code: '02', label: 'Delivery & COD', badge: 'FREE IE' },
+    { id: 'shipping', code: '02', label: 'Delivery & Payment', badge: 'FREE IE' },
     { id: 'sizing', code: '03', label: 'Size Chart & Fit' },
     { id: 'care', code: '04', label: 'Garment Care' },
     { id: 'privacy', code: '05', label: 'Privacy & GDPR' },
@@ -256,7 +256,7 @@ export const CustomerCareModal: React.FC<CustomerCareModalProps> = ({
                   Step-by-Step Return Procedure:
                 </h4>
                 <ol className="text-xs font-mono-archive text-[#D6CCBA]/85 space-y-2 list-decimal pl-4 leading-relaxed">
-                  <li>Email our concierge at <a href="mailto:noire.ireland@gmail.com" className="text-white underline underline-offset-4 font-bold hover:text-[#FF0800]">noire.ireland@gmail.com</a> within 14 days of delivery with your Order Reference (e.g. <code>NOIRE-2026-XXXX</code>).</li>
+                  <li>Email our concierge at <a href="mailto:concierge@noireofficial.ie" className="text-white underline underline-offset-4 font-bold hover:text-[#FF0800]">concierge@noireofficial.ie</a> within 14 days of delivery with your Order Reference (e.g. <code>NOIRE-88-CARD-XXXX</code>).</li>
                   <li>Our studio acknowledges your notification within 24 business hours and issues an authorized Return Tracking Number and physical Dublin return address.</li>
                   <li>Package the tracksuit securely in its archival black presentation box with all certificates and dispatch via trackable courier.</li>
                   <li>Upon condition inspection at our Dublin studio, your refund will be disbursed within 14 days via direct electronic bank transfer (SEPA) to your account.</li>
@@ -273,7 +273,7 @@ export const CustomerCareModal: React.FC<CustomerCareModalProps> = ({
             </div>
           )}
 
-          {/* ────────────────── 2. SHIPPING & CASH ON DELIVERY ────────────────── */}
+          {/* ────────────────── 2. SHIPPING, CARD & OPTIONAL COD ────────────────── */}
           {activeTab === 'shipping' && (
             <div className="space-y-6 animate-fadeIn">
               <div className="border-b border-[#D6CCBA]/15 pb-4">
@@ -281,10 +281,10 @@ export const CustomerCareModal: React.FC<CustomerCareModalProps> = ({
                   § 02 · LOGISTICS SPECIFICATION · ALL 26 COUNTIES OF IRELAND*
                 </span>
                 <h3 className="font-serif-editorial text-2xl sm:text-3xl text-[#FFFFFF] font-light">
-                  Complimentary Ireland Delivery & Cash on Delivery (COD)
+                  Complimentary Ireland Delivery · Card &amp; Optional COD
                 </h3>
                 <p className="font-mono-archive text-xs text-[#D6CCBA]/70 mt-1.5">
-                  Direct insured courier service across all 26 counties of Ireland*
+                  24–48h Irish courier dispatch across all 26 counties of Ireland*
                 </p>
               </div>
 
@@ -297,36 +297,36 @@ export const CustomerCareModal: React.FC<CustomerCareModalProps> = ({
                 </div>
                 <div className="p-4 bg-[#1F1E1D] border border-[#D6CCBA]/25">
                   <span className="text-[10px] uppercase text-[#D6CCBA]/60 block mb-1">DISPATCH ESTIMATE</span>
-                  <span className="text-xl font-serif-editorial text-white font-bold block">1–2 BUSINESS DAYS</span>
-                  <span className="text-[11px] text-[#D6CCBA]/80 block mt-1">Studio inspection & packaging.</span>
+                  <span className="text-xl font-serif-editorial text-white font-bold block">24–48 HOURS</span>
+                  <span className="text-[11px] text-[#D6CCBA]/80 block mt-1">Dispatched from Ireland with studio inspection.</span>
                 </div>
                 <div className="p-4 bg-[#1F1E1D] border border-[#D6CCBA]/25">
-                  <span className="text-[10px] uppercase text-[#D6CCBA]/60 block mb-1">COURIER TRANSIT</span>
-                  <span className="text-xl font-serif-editorial text-white font-bold block">2–3 BUSINESS DAYS</span>
-                  <span className="text-[11px] text-[#D6CCBA]/80 block mt-1">Standard delivery across all 26 counties of Ireland*.</span>
+                  <span className="text-[10px] uppercase text-[#D6CCBA]/60 block mb-1">PAYMENT OPTIONS</span>
+                  <span className="text-xl font-serif-editorial text-white font-bold block">CARD OR COD</span>
+                  <span className="text-[11px] text-[#D6CCBA]/80 block mt-1">Card / Apple Pay / Google Pay or optional Cash on Delivery.</span>
                 </div>
               </div>
 
-              {/* COD Mechanics */}
+              {/* Payment & Courier Mechanics */}
               <div className="p-5 bg-[#181818] border border-[#D6CCBA]/25 space-y-3">
                 <h4 className="font-mono-archive text-xs uppercase tracking-wider text-white font-bold">
-                  How Cash on Delivery (COD) Works:
+                  Card / Express Pay &amp; Optional Cash on Delivery (COD):
                 </h4>
                 <p className="text-xs sm:text-sm text-[#D6CCBA]/95 leading-relaxed">
-                  We believe in zero financial risk for collectors. When you submit your order, <strong>no card information or online advance payment is taken</strong>. Your set is allocated in our registry and hand-prepared at our studio.
+                  <strong>Card / Apple Pay / Google Pay (via Stripe Checkout)</strong> is our primary option for instant reservation and priority dispatch. If you prefer, you may select <strong>Cash on Delivery (COD — Dublin &amp; 26 Counties)</strong> as a secondary option at checkout and settle in cash upon handover.
                 </p>
                 <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 pt-2 font-mono-archive text-xs">
                   <div className="p-3 bg-[#121212] border border-[#D6CCBA]/15">
                     <span className="text-[#FF0800] font-bold block mb-1">STEP 01: RESERVE</span>
-                    <span>Submit your name, delivery address, Eircode & mobile number.</span>
+                    <span>Enter delivery details, Eircode &amp; choose Card / Express Pay or optional COD.</span>
                   </div>
                   <div className="p-3 bg-[#121212] border border-[#D6CCBA]/15">
                     <span className="text-[#FF0800] font-bold block mb-1">STEP 02: CONFIRMATION</span>
-                    <span>Receive automated archive confirmation and dispatch notification.</span>
+                    <span>Receive automated archive confirmation and 24–48h courier tracking.</span>
                   </div>
                   <div className="p-3 bg-[#121212] border border-[#D6CCBA]/15">
                     <span className="text-[#FF0800] font-bold block mb-1">STEP 03: HANDOVER</span>
-                    <span>Inspect parcel and pay €88 exact in cash directly to the courier.</span>
+                    <span>Arrives in archival presentation box with Certificate of Origin &amp; embroidered tote bag.</span>
                   </div>
                 </div>
               </div>
@@ -527,14 +527,14 @@ export const CustomerCareModal: React.FC<CustomerCareModalProps> = ({
                 <div className="p-4 bg-[#181818] border border-[#D6CCBA]/20 space-y-2">
                   <h4 className="text-white font-bold uppercase tracking-wider">1. Minimal Information Collection</h4>
                   <p>
-                    When placing a Cash on Delivery order with Atelier NOIRÉ, we collect strictly the minimum information necessary to execute delivery: full name, email address, physical delivery street address, Eircode, and mobile phone number for courier coordination.
+                    When placing a Card / Express Pay or optional Cash on Delivery order with Atelier NOIRÉ, we collect strictly the minimum information necessary to execute delivery: full name, email address, physical delivery street address, Eircode, and mobile phone number for courier coordination.
                   </p>
                 </div>
 
                 <div className="p-4 bg-[#181818] border border-[#D6CCBA]/20 space-y-2">
-                  <h4 className="text-white font-bold uppercase tracking-wider">2. Zero Payment Card Storage</h4>
+                  <h4 className="text-white font-bold uppercase tracking-wider">2. Zero Local Card Number Storage</h4>
                   <p>
-                    Because Archive Drop No. 01 operates exclusively on a Cash on Delivery (COD) physical handover model in Ireland, we never process, collect, or store credit or debit card numbers online.
+                    All card, Apple Pay, and Google Pay transactions are handled securely via PCI-DSS Level 1 Stripe Checkout (we never collect or store raw card numbers on Atelier NOIRÉ servers). Optional Cash on Delivery (COD) settles directly at physical handover.
                   </p>
                 </div>
 
@@ -548,7 +548,7 @@ export const CustomerCareModal: React.FC<CustomerCareModalProps> = ({
                 <div className="p-4 bg-[#181818] border border-[#D6CCBA]/20 space-y-2">
                   <h4 className="text-white font-bold uppercase tracking-wider">4. Statutory Rights to Erasure</h4>
                   <p>
-                    Under the GDPR and the Irish Data Protection Act 2018, you maintain the right to access, rectify, or demand the permanent deletion of your customer records by contacting <a href="mailto:noire.ireland@gmail.com" className="text-white underline font-bold">noire.ireland@gmail.com</a>.
+                    Under the GDPR and the Irish Data Protection Act 2018, you maintain the right to access, rectify, or demand the permanent deletion of your customer records by contacting <a href="mailto:concierge@noireofficial.ie" className="text-white underline font-bold">concierge@noireofficial.ie</a>.
                   </p>
                 </div>
               </div>
@@ -574,10 +574,10 @@ export const CustomerCareModal: React.FC<CustomerCareModalProps> = ({
                 <div className="p-5 bg-[#181818] border border-[#D6CCBA]/20 space-y-2">
                   <span className="text-[10px] text-[#D6CCBA]/60 uppercase tracking-wider block font-bold">OFFICIAL EMAIL</span>
                   <a 
-                    href="mailto:noire.ireland@gmail.com" 
+                    href="mailto:concierge@noireofficial.ie" 
                     className="text-white text-base font-bold underline underline-offset-4 hover:text-[#FF0800] transition-colors block"
                   >
-                    noire.ireland@gmail.com
+                    concierge@noireofficial.ie
                   </a>
                   <p className="text-[11px] text-[#D6CCBA]/75 pt-1 leading-relaxed">
                     Direct inquiries regarding order status, address modifications, sizing advice, and return authorizations.

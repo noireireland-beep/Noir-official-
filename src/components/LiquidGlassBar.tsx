@@ -1,11 +1,13 @@
-import React, { useId } from 'react';
+import React, { useEffect, useId, useRef } from 'react';
 import { LIQUID_GLASS_DISPLACEMENT_MAP } from '../utils/liquidGlassMap';
+import { computeLiquidGlassMetrics } from '../utils/liquidGlassScroll';
 
 interface LiquidGlassBarProps {
   children: React.ReactNode;
   className?: string;
   frostOpacity?: number;
   saturation?: number;
+  scrollProgress?: number;
   as?: 'div' | 'button';
   type?: 'button' | 'submit' | 'reset';
   onClick?: React.MouseEventHandler<HTMLElement>;
@@ -17,8 +19,9 @@ interface LiquidGlassBarProps {
 export const LiquidGlassBar: React.FC<LiquidGlassBarProps> = ({
   children,
   className = '',
-  frostOpacity = 0.16,
-  saturation = 1.25,
+  frostOpacity = 0.12,
+  saturation = 1.12,
+  scrollProgress,
   as = 'div',
   type = 'button',
   onClick,
@@ -29,12 +32,78 @@ export const LiquidGlassBar: React.FC<LiquidGlassBarProps> = ({
   const rawId = useId();
   const filterId = `glass-filter-${rawId.replace(/[^a-zA-Z0-9_-]/g, '')}`;
 
+  const containerRef = useRef<HTMLElement | null>(null);
+  const displacementRef = useRef<SVGFEDisplacementMapElement | null>(null);
+  const blurRef = useRef<SVGFEGaussianBlurElement | null>(null);
+
+  const initialMetrics = computeLiquidGlassMetrics({
+    scrollY: 0,
+    maxScroll: 1,
+    externalProgress: scrollProgress,
+    baseFrost: frostOpacity,
+    baseSaturation: saturation,
+  });
+
+  useEffect(() => {
+    let rafId: number | null = null;
+
+    const applyScrollMetrics = () => {
+      rafId = null;
+      const docEl = document.documentElement;
+      const scrollY = typeof window !== 'undefined' ? window.scrollY : 0;
+      const maxScroll = Math.max(1, docEl.scrollHeight - window.innerHeight);
+
+      const metrics = computeLiquidGlassMetrics({
+        scrollY,
+        maxScroll,
+        externalProgress: scrollProgress,
+        baseFrost: frostOpacity,
+        baseSaturation: saturation,
+      });
+
+      const el = containerRef.current;
+      if (el) {
+        el.style.setProperty('--glass-blur', `${metrics.blurPx}px`);
+        el.style.setProperty('--glass-scale', String(metrics.transformScale));
+        el.style.setProperty('--glass-frost', String(metrics.frostOpacity));
+        el.style.setProperty('--glass-saturation', String(metrics.saturation));
+      }
+
+      if (displacementRef.current) {
+        displacementRef.current.setAttribute('scale', String(metrics.displacementScale));
+      }
+      if (blurRef.current) {
+        blurRef.current.setAttribute('stdDeviation', String(metrics.stdDeviation));
+      }
+    };
+
+    const scheduleUpdate = () => {
+      if (rafId !== null) return;
+      rafId = window.requestAnimationFrame(applyScrollMetrics);
+    };
+
+    applyScrollMetrics();
+    window.addEventListener('scroll', scheduleUpdate, { passive: true });
+    window.addEventListener('resize', scheduleUpdate, { passive: true });
+
+    return () => {
+      if (rafId !== null) {
+        window.cancelAnimationFrame(rafId);
+      }
+      window.removeEventListener('scroll', scheduleUpdate);
+      window.removeEventListener('resize', scheduleUpdate);
+    };
+  }, [scrollProgress, frostOpacity, saturation]);
+
   const cssVars = {
-    '--glass-frost': String(frostOpacity),
-    '--glass-saturation': String(saturation),
+    '--glass-frost': String(initialMetrics.frostOpacity),
+    '--glass-saturation': String(initialMetrics.saturation),
+    '--glass-blur': `${initialMetrics.blurPx}px`,
+    '--glass-scale': String(initialMetrics.transformScale),
     '--filter-id': `url(#${filterId})`,
   } as React.CSSProperties;
 
+  // Clear single-channel optical displacement without chromatic blue/RGB fringing
   const filterSvg = (
     <svg
       className="noire-liquid-glass__filter"
@@ -60,50 +129,19 @@ export const LiquidGlassBar: React.FC<LiquidGlassBarProps> = ({
             href={LIQUID_GLASS_DISPLACEMENT_MAP}
           />
           <feDisplacementMap
+            ref={displacementRef}
             in="SourceGraphic"
             in2="map"
-            result="dispRed"
-            scale="-20"
+            result="refracted"
+            scale={initialMetrics.displacementScale}
             xChannelSelector="R"
             yChannelSelector="G"
           />
-          <feColorMatrix
-            in="dispRed"
-            type="matrix"
-            values="1 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 1 0"
-            result="red"
+          <feGaussianBlur
+            ref={blurRef}
+            in="refracted"
+            stdDeviation={initialMetrics.stdDeviation}
           />
-          <feDisplacementMap
-            in="SourceGraphic"
-            in2="map"
-            result="dispGreen"
-            scale="-24"
-            xChannelSelector="R"
-            yChannelSelector="G"
-          />
-          <feColorMatrix
-            in="dispGreen"
-            type="matrix"
-            values="0 0 0 0 0 0 1 0 0 0 0 0 0 0 0 0 0 0 1 0"
-            result="green"
-          />
-          <feDisplacementMap
-            in="SourceGraphic"
-            in2="map"
-            result="dispBlue"
-            scale="-28"
-            xChannelSelector="R"
-            yChannelSelector="G"
-          />
-          <feColorMatrix
-            in="dispBlue"
-            type="matrix"
-            values="0 0 0 0 0 0 0 0 0 0 0 0 1 0 0 0 0 0 1 0"
-            result="blue"
-          />
-          <feBlend in="red" in2="green" mode="screen" result="rg" />
-          <feBlend in="rg" in2="blue" mode="screen" result="output" />
-          <feGaussianBlur in="output" stdDeviation="3" />
         </filter>
       </defs>
     </svg>
@@ -119,6 +157,9 @@ export const LiquidGlassBar: React.FC<LiquidGlassBarProps> = ({
   if (as === 'button') {
     return (
       <button
+        ref={(node) => {
+          containerRef.current = node;
+        }}
         type={type}
         onClick={onClick as React.MouseEventHandler<HTMLButtonElement>}
         tabIndex={tabIndex}
@@ -138,6 +179,9 @@ export const LiquidGlassBar: React.FC<LiquidGlassBarProps> = ({
 
   return (
     <div
+      ref={(node) => {
+        containerRef.current = node;
+      }}
       onClick={onClick as React.MouseEventHandler<HTMLDivElement>}
       aria-label={ariaLabel}
       aria-hidden={ariaHidden}

@@ -1,5 +1,9 @@
 import { Router, Request, Response } from 'express';
-import { createOrder } from './orders-service.js';
+import {
+  createOrder,
+  verifyAndFinalizeStripePayment,
+  cancelAndReleaseStripeOrder,
+} from './orders-service.js';
 import {
   verifyAdminRequest,
   getAdminDashboardStats,
@@ -13,6 +17,10 @@ import {
 import { isPlaceholderEnvValue } from './firebase-admin.js';
 import { getInventorySnapshot } from './storage-store.js';
 import { createRateLimiter } from './rate-limiter.js';
+import {
+  getSafeStripeStatus,
+  verifyStripeWebhookSignature,
+} from './stripe-service.js';
 
 export const apiRouter = Router();
 
@@ -30,6 +38,18 @@ const adminRateLimiter = createRateLimiter({
   message: 'Administrator request limit reached. Please wait a moment.',
 });
 
+function resolveBaseUrl(req: Request): string {
+  const originHeader = req.get('origin');
+  if (originHeader && /^https?:\/\/[^/\s]+$/i.test(originHeader.trim())) {
+    return originHeader.trim().replace(/\/+$/, '');
+  }
+  const host = req.get('x-forwarded-host') || req.get('host') || 'www.noireofficial.ie';
+  const protoHeader = req.get('x-forwarded-proto');
+  const isLocal = host.startsWith('localhost') || host.startsWith('127.0.0.1');
+  const protocol = protoHeader ? protoHeader.split(',')[0].trim() : isLocal ? 'http' : req.protocol || 'https';
+  return `${protocol}://${host}`;
+}
+
 // ── CUSTOMER ENDPOINTS ────────────────────────────────────────────────────────
 
 // Live stock availability
@@ -45,14 +65,11 @@ apiRouter.get('/inventory', async (_req: Request, res: Response) => {
 // Checkout Order Placement (Protected with rate limiting & server validation)
 apiRouter.post('/orders', orderRateLimiter, async (req: Request, res: Response) => {
   try {
-    const host = req.get('host') || 'localhost:3000';
-    const protocol = req.protocol || 'http';
-    const baseUrl = `${protocol}://${host}`;
-
+    const baseUrl = resolveBaseUrl(req);
     const result = await createOrder(req.body, baseUrl);
 
-    if (!result.success) {
-      res.status(400).json({
+    if (!result.success || !result.order) {
+      res.status(result.statusCode || 400).json({
         success: false,
         error: result.error || 'Order placement failed.',
         errors: result.errors,
@@ -62,20 +79,174 @@ apiRouter.post('/orders', orderRateLimiter, async (req: Request, res: Response) 
 
     res.status(201).json({
       success: true,
+      orderId: result.order.id,
+      orderReference: result.order.orderReference,
+      stripeSessionId: result.order.stripeSessionId,
+      checkoutUrl: result.order.checkoutUrl,
       order: {
-        orderReference: result.order?.orderReference,
-        customer: result.order?.customer,
-        items: result.order?.items,
-        financials: result.order?.financials,
-        paymentMethod: result.order?.paymentMethod,
-        paymentStatus: result.order?.paymentStatus,
-        orderStatus: result.order?.orderStatus,
-        createdAt: result.order?.createdAt,
+        orderReference: result.order.orderReference,
+        customer: result.order.customer,
+        items: result.order.items,
+        financials: result.order.financials,
+        paymentMethod: result.order.paymentMethod,
+        paymentStatus: result.order.paymentStatus,
+        stripeSessionId: result.order.stripeSessionId,
+        checkoutUrl: result.order.checkoutUrl,
+        orderStatus: result.order.orderStatus,
+        createdAt: result.order.createdAt,
       },
     });
   } catch (err: unknown) {
     console.error('Unhandled checkout error in /api/orders:', err);
     res.status(500).json({ success: false, error: 'Internal order placement server error.' });
+  }
+});
+
+// Safe Stripe capability status (never leaks secret values)
+apiRouter.get('/stripe/status', (_req: Request, res: Response) => {
+  res.json({
+    success: true,
+    ...getSafeStripeStatus(),
+  });
+});
+
+// Verify Stripe Checkout Session upon customer return
+apiRouter.post('/stripe/verify-session', async (req: Request, res: Response) => {
+  try {
+    const { sessionId, orderReference } = req.body || {};
+    const result = await verifyAndFinalizeStripePayment({
+      sessionId: String(sessionId || ''),
+      orderReference: typeof orderReference === 'string' ? orderReference : undefined,
+      baseUrl: resolveBaseUrl(req),
+    });
+
+    if (!result.success || !result.order) {
+      res.status(result.statusCode || 400).json({
+        success: false,
+        paid: result.paid,
+        error: result.error || 'Unable to verify Stripe payment.',
+      });
+      return;
+    }
+
+    res.json({
+      success: true,
+      paid: true,
+      alreadyPaid: Boolean(result.alreadyPaid),
+      order: {
+        orderReference: result.order.orderReference,
+        customer: result.order.customer,
+        items: result.order.items,
+        financials: result.order.financials,
+        paymentMethod: result.order.paymentMethod,
+        paymentStatus: result.order.paymentStatus,
+        stripeSessionId: result.order.stripeSessionId,
+        orderStatus: result.order.orderStatus,
+        createdAt: result.order.createdAt,
+      },
+    });
+  } catch (err: unknown) {
+    res.status(500).json({
+      success: false,
+      paid: false,
+      error: err instanceof Error ? err.message : 'Stripe verification error.',
+    });
+  }
+});
+
+// Cancel unpaid Stripe reservation & restore inventory when customer cancels Checkout
+apiRouter.post('/stripe/cancel-session', async (req: Request, res: Response) => {
+  try {
+    const { sessionId, orderReference } = req.body || {};
+    const result = await cancelAndReleaseStripeOrder({
+      sessionId: typeof sessionId === 'string' ? sessionId : undefined,
+      orderReference: typeof orderReference === 'string' ? orderReference : undefined,
+      baseUrl: resolveBaseUrl(req),
+    });
+
+    if (!result.success) {
+      res.status(result.statusCode || 400).json({
+        success: false,
+        cancelled: false,
+        alreadyPaid: Boolean(result.alreadyPaid),
+        order: result.order,
+        error: result.error || 'Unable to cancel reservation.',
+      });
+      return;
+    }
+
+    res.json({
+      success: true,
+      cancelled: result.cancelled,
+      orderReference: result.order?.orderReference,
+    });
+  } catch (err: unknown) {
+    res.status(500).json({
+      success: false,
+      cancelled: false,
+      error: err instanceof Error ? err.message : 'Stripe cancellation error.',
+    });
+  }
+});
+
+// Stripe Webhook endpoint (handles checkout.session.completed & checkout.session.expired)
+apiRouter.post('/stripe/webhook', async (req: Request, res: Response) => {
+  try {
+    const rawBody =
+      typeof (req as Request & { rawBody?: string }).rawBody === 'string'
+        ? (req as Request & { rawBody?: string }).rawBody!
+        : typeof req.body === 'string'
+        ? req.body
+        : JSON.stringify(req.body || {});
+    const sigHeader = req.get('stripe-signature');
+    const sigCheck = verifyStripeWebhookSignature({
+      rawBody,
+      signatureHeader: sigHeader,
+      webhookSecret: process.env.STRIPE_WEBHOOK_SECRET,
+    });
+
+    if (!sigCheck.valid) {
+      res.status(400).json({ success: false, error: sigCheck.error });
+      return;
+    }
+
+    const event = (typeof req.body === 'object' && req.body ? req.body : JSON.parse(rawBody)) as {
+      type?: string;
+      data?: { object?: { id?: string; metadata?: Record<string, string>; client_reference_id?: string } };
+    };
+
+    const sessionObj = event?.data?.object;
+    const sessionId = sessionObj?.id;
+    const orderReference = sessionObj?.metadata?.orderReference || sessionObj?.client_reference_id;
+
+    if (
+      (event?.type === 'checkout.session.completed' ||
+        event?.type === 'checkout.session.async_payment_succeeded') &&
+      sessionId
+    ) {
+      await verifyAndFinalizeStripePayment({
+        sessionId,
+        orderReference,
+        baseUrl: resolveBaseUrl(req),
+      });
+    } else if (
+      (event?.type === 'checkout.session.expired' ||
+        event?.type === 'checkout.session.async_payment_failed') &&
+      (sessionId || orderReference)
+    ) {
+      await cancelAndReleaseStripeOrder({
+        sessionId,
+        orderReference,
+        baseUrl: resolveBaseUrl(req),
+      });
+    }
+
+    res.json({ received: true });
+  } catch (err: unknown) {
+    res.status(400).json({
+      success: false,
+      error: err instanceof Error ? err.message : 'Invalid Stripe webhook payload.',
+    });
   }
 });
 

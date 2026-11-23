@@ -1,7 +1,9 @@
 import React, { useEffect, useState, useRef } from 'react';
 import { gsap } from 'gsap';
-import { Eye, EyeOff, ArrowRight, Lock, Check } from 'lucide-react';
-import { validatePasskeyAttempt, computePreloadPercent } from '../utils/archiveAccess';
+import { computePreloadPercent } from '../utils/archiveAccess';
+// Passkey wall ('shrek0shamrock67' in ../utils/archiveAccess) is cleanly decoupled so visitors land directly on the storefront after loading.
+// import { Eye, EyeOff, ArrowRight, Lock, Check } from 'lucide-react';
+// import { validatePasskeyAttempt } from '../utils/archiveAccess';
 
 interface ArchivePreloaderProps {
   onComplete: () => void;
@@ -59,18 +61,14 @@ const CRITICAL_ASSETS: AssetItem[] = [
 
 export const ArchivePreloader: React.FC<ArchivePreloaderProps> = ({ onComplete }) => {
   const [progress, setProgress] = useState<number>(0);
-  const [currentAsset, setCurrentAsset] = useState<string>('Initializing background preload...');
+  const [currentAsset, setCurrentAsset] = useState<string>('Initializing archive assets...');
   const [assetsReady, setAssetsReady] = useState<boolean>(false);
-  const [isAuthorized, setIsAuthorized] = useState<boolean>(false);
-  const [passkey, setPasskey] = useState<string>('');
-  const [showPasskey, setShowPasskey] = useState<boolean>(false);
-  const [errorMessage, setErrorMessage] = useState<string | null>(null);
-  const [isShaking, setIsShaking] = useState<boolean>(false);
+  // Password gateway disabled so visitors enter directly upon loading
+  const [isAuthorized] = useState<boolean>(true);
   const [logoFailed, setLogoFailed] = useState<boolean>(false);
 
   const containerRef = useRef<HTMLElement>(null);
   const cardRef = useRef<HTMLDivElement>(null);
-  const inputRef = useRef<HTMLInputElement>(null);
   const progressObj = useRef<{ value: number }>({ value: 0 });
   const hasExitedRef = useRef<boolean>(false);
   const unlockScrollRef = useRef<(() => void) | null>(null);
@@ -226,7 +224,7 @@ export const ArchivePreloader: React.FC<ArchivePreloaderProps> = ({ onComplete }
     // Background safety completion timeout
     const safetyTimer = setTimeout(() => {
       markAssetsComplete();
-    }, 15000);
+    }, 8000);
 
     return () => {
       active = false;
@@ -237,7 +235,7 @@ export const ArchivePreloader: React.FC<ArchivePreloaderProps> = ({ onComplete }
     };
   }, []);
 
-  // Trigger architectural curtain reveal once BOTH passkey is accepted AND background preload completes
+  // Trigger architectural curtain reveal automatically once background preload completes
   useEffect(() => {
     if (!isAuthorized || !assetsReady || hasExitedRef.current) return;
     hasExitedRef.current = true;
@@ -297,47 +295,21 @@ export const ArchivePreloader: React.FC<ArchivePreloaderProps> = ({ onComplete }
     };
   }, [isAuthorized, assetsReady]);
 
-  const handleSubmit = (e: React.FormEvent) => {
-    e.preventDefault();
-    if (isAuthorized) return;
-
-    const result = validatePasskeyAttempt(passkey);
-    if (!result.valid) {
-      setErrorMessage(result.error || 'Incorrect passkey. Access denied.');
-      setIsShaking(false);
-      requestAnimationFrame(() => {
-        setIsShaking(true);
-      });
-      setTimeout(() => setIsShaking(false), 480);
-      inputRef.current?.focus();
-      inputRef.current?.select();
-      return;
-    }
-
-    setErrorMessage(null);
-    setIsAuthorized(true);
-  };
+  /*
+   * Legacy passkey handler retained for future private drops:
+   * const handleSubmit = (e: React.FormEvent) => {
+   *   e.preventDefault();
+   *   const result = validatePasskeyAttempt(passkey);
+   *   if (result.valid) setIsAuthorized(true);
+   * };
+   */
 
   return (
     <aside
       ref={containerRef}
-      aria-label="Atelier NOIRÉ Private Archive Access"
+      aria-label="Atelier NOIRÉ Storefront Loading Overlay"
       className="fixed inset-0 w-screen h-dvh min-h-dvh z-[99999] flex flex-col justify-between p-5 sm:p-10 md:p-14 bg-[#161616] text-[#D6CCBA] pointer-events-auto overflow-y-auto overflow-x-hidden will-change-transform"
     >
-      <style>{`
-        @keyframes gateRattle {
-          0%, 100% { transform: translateX(0); }
-          18% { transform: translateX(-6px); }
-          36% { transform: translateX(6px); }
-          54% { transform: translateX(-4px); }
-          72% { transform: translateX(4px); }
-          88% { transform: translateX(-2px); }
-        }
-        .animate-gate-shake {
-          animation: gateRattle 0.45s cubic-bezier(0.36, 0.07, 0.19, 0.97) both;
-        }
-      `}</style>
-
       {/* Background radial studio spotlight */}
       <div
         className="fixed inset-0 pointer-events-none"
@@ -350,17 +322,15 @@ export const ArchivePreloader: React.FC<ArchivePreloaderProps> = ({ onComplete }
       {/* Top Metadata Bar */}
       <div className="relative z-10 flex items-center justify-between gap-4 text-[11px] font-mono-archive tracking-[0.2em] text-[#D6CCBA]/65 uppercase border-b border-[#D6CCBA]/15 pb-4 shrink-0">
         <span className="text-[#D6CCBA] whitespace-nowrap">ATELIER NOIRÉ</span>
-        <span className="hidden sm:inline text-[#D6CCBA]/45 whitespace-nowrap">PRIVATE ARCHIVE · DUBLIN</span>
+        <span className="hidden sm:inline text-[#D6CCBA]/45 whitespace-nowrap">DUBLIN STUDIO ARCHIVE</span>
         <span className="whitespace-nowrap">EDITION 01 / 88 SETS</span>
       </div>
 
-      {/* Central Architectural Login Frame */}
+      {/* Central Architectural Loading Curtain Frame */}
       <div className="relative z-10 w-full max-w-[440px] mx-auto my-auto py-6 flex flex-col items-center">
         <div
           ref={cardRef}
-          className={`relative w-full border border-[#D6CCBA]/25 bg-[#161616]/95 p-7 sm:p-10 backdrop-blur-md shadow-2xl transition-transform ${
-            isShaking ? 'animate-gate-shake' : ''
-          }`}
+          className="relative w-full border border-[#D6CCBA]/25 bg-[#161616]/95 p-7 sm:p-10 backdrop-blur-md shadow-2xl"
         >
           {/* Architectural Corner Brackets */}
           <div className="absolute -top-1 -left-1 w-2.5 h-2.5 border-t-2 border-l-2 border-[#D6CCBA]/60 pointer-events-none" />
@@ -370,12 +340,12 @@ export const ArchivePreloader: React.FC<ArchivePreloaderProps> = ({ onComplete }
 
           {/* Framing Header */}
           <div className="w-full flex items-center justify-between text-[10px] font-mono-archive text-[#D6CCBA]/55 tracking-[0.18em] uppercase pb-3 border-b border-[#D6CCBA]/12">
-            <span>PRIVATE ACCESS</span>
+            <span>DUBLIN STUDIO</span>
             <span>ARCHIVE DROP 01</span>
           </div>
 
-          {/* Genuine NOIRÉ Logo & Title */}
-          <div className="w-full flex flex-col items-center text-center pt-7 pb-6">
+          {/* Genuine NOIRÉ Logo & Status */}
+          <div className="w-full flex flex-col items-center text-center pt-7 pb-4">
             {!logoFailed ? (
               <img
                 src="/assets/aistudio/edited-image-1793305524_ccd04284.png"
@@ -390,112 +360,22 @@ export const ArchivePreloader: React.FC<ArchivePreloaderProps> = ({ onComplete }
               </span>
             )}
 
-            <h1 className="font-serif-editorial text-xl sm:text-2xl text-[#FFFFFF] tracking-tight mt-6 text-balance leading-snug">
-              {isAuthorized ? 'Access granted.' : 'Private Archive Entry'}
-            </h1>
+            <p className="font-serif-editorial text-xl sm:text-2xl text-[#FFFFFF] tracking-tight mt-6 text-balance leading-snug">
+              {assetsReady ? 'Entering Archive Drop\u00A001' : 'Preparing Archive Storefront'}
+            </p>
 
             <p className="text-xs sm:text-[13px] text-[#D6CCBA]/70 mt-2 leading-relaxed max-w-[44ch]">
-              {isAuthorized
-                ? assetsReady
-                  ? 'Opening the Archive Drop\u00A001 dossier.'
-                  : 'Finalizing background asset calibration.'
-                : 'Enter the collector passkey to enter Drop\u00A001.'}
+              {assetsReady
+                ? 'Lookbook photography, sizing instruments, and garment plates ready.'
+                : 'Calibrating high-resolution lookbook photography & editorial typography.'}
             </p>
           </div>
 
-          {/* Form vs Unlock Transition State */}
-          {!isAuthorized ? (
-            <form onSubmit={handleSubmit} noValidate className="w-full space-y-4">
-              <div>
-                <div className="flex items-center justify-between mb-2">
-                  <label
-                    htmlFor="archive-passkey-input"
-                    className="text-[10px] font-mono-archive uppercase tracking-[0.2em] text-[#D6CCBA]/80 flex items-center gap-1.5"
-                  >
-                    <Lock className="w-3 h-3 text-[#D6CCBA]/60" aria-hidden="true" />
-                    <span>Archive Passkey</span>
-                  </label>
-                </div>
-
-                <div
-                  className={`flex items-center bg-[#111111] border transition-colors ${
-                    errorMessage
-                      ? 'border-[#FF0800]/80'
-                      : 'border-[#D6CCBA]/25 focus-within:border-[#D6CCBA]'
-                  }`}
-                >
-                  <input
-                    ref={inputRef}
-                    id="archive-passkey-input"
-                    type={showPasskey ? 'text' : 'password'}
-                    value={passkey}
-                    onChange={(e) => {
-                      setPasskey(e.target.value);
-                      if (errorMessage) setErrorMessage(null);
-                    }}
-                    autoComplete="current-password"
-                    autoCapitalize="none"
-                    autoCorrect="off"
-                    spellCheck={false}
-                    autoFocus
-                    placeholder="Enter passkey"
-                    aria-invalid={errorMessage ? 'true' : 'false'}
-                    aria-describedby={errorMessage ? 'archive-passkey-error' : undefined}
-                    className="flex-1 min-w-0 bg-transparent px-4 py-3 text-sm font-mono text-[#FFFFFF] placeholder:text-[#D6CCBA]/35 focus:outline-none tracking-[0.12em] [&::selection]:!bg-[#D6CCBA] [&::selection]:!text-[#161616]"
-                  />
-
-                  <button
-                    type="button"
-                    onClick={() => setShowPasskey((prev) => !prev)}
-                    aria-label={showPasskey ? 'Hide passkey' : 'Show passkey'}
-                    className="min-w-[44px] min-h-[44px] flex items-center justify-center text-[#D6CCBA]/60 hover:text-[#FFFFFF] focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-[#D6CCBA] transition-colors cursor-pointer shrink-0"
-                  >
-                    {showPasskey ? (
-                      <EyeOff className="w-4 h-4" aria-hidden="true" />
-                    ) : (
-                      <Eye className="w-4 h-4" aria-hidden="true" />
-                    )}
-                  </button>
-                </div>
-
-                <div
-                  id="archive-passkey-error"
-                  role="alert"
-                  aria-live="polite"
-                  className="min-h-[20px] mt-1.5 flex items-center"
-                >
-                  {errorMessage && (
-                    <span className="text-[11px] font-mono-archive tracking-[0.08em] text-[#FF5449]">
-                      {errorMessage}
-                    </span>
-                  )}
-                </div>
-              </div>
-
-              <button
-                type="submit"
-                className="w-full min-h-[48px] bg-[#D6CCBA] hover:bg-[#FFFFFF] text-[#161616] font-mono-archive text-xs font-semibold uppercase tracking-[0.22em] px-6 py-3.5 transition-colors duration-200 flex items-center justify-center gap-2.5 cursor-pointer focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#FFFFFF] whitespace-nowrap"
-              >
-                <span>Unlock Archive</span>
-                <ArrowRight className="w-3.5 h-3.5" aria-hidden="true" />
-              </button>
-            </form>
-          ) : (
-            <div className="w-full py-4 flex flex-col items-center justify-center gap-3 border border-[#D6CCBA]/20 bg-[#1B1A19]">
-              <div className="w-9 h-9 border border-[#D6CCBA]/50 flex items-center justify-center text-[#FFFFFF]">
-                <Check className="w-4 h-4" aria-hidden="true" />
-              </div>
-              <span className="text-[11px] font-mono-archive uppercase tracking-[0.2em] text-[#FFFFFF]">
-                Passkey Verified
-              </span>
-            </div>
-          )}
-
-          {/* Quiet Background Preload Progress Track */}
-          <div className="w-full mt-7 pt-5 border-t border-[#D6CCBA]/12">
+          {/* Background Asset Preload Progress Track */}
+          <div className="w-full mt-5 pt-5 border-t border-[#D6CCBA]/12">
             <div
               role="progressbar"
-              aria-label="Background archive preload progress"
+              aria-label="Storefront asset preload progress"
               aria-valuemin={0}
               aria-valuemax={100}
               aria-valuenow={progress}
@@ -509,7 +389,7 @@ export const ArchivePreloader: React.FC<ArchivePreloaderProps> = ({ onComplete }
 
             <div className="mt-2.5 flex items-center justify-between gap-3 text-[10px] font-mono-archive text-[#D6CCBA]/60 tracking-[0.14em] tabular-nums">
               <span className="truncate max-w-[240px] uppercase text-[9px] text-[#D6CCBA]/55">
-                {assetsReady ? 'Archive ready' : `Preloading · ${currentAsset}`}
+                {assetsReady ? 'Storefront ready' : `Loading · ${currentAsset}`}
               </span>
               <span className="font-medium text-[#D6CCBA] shrink-0">
                 {progress}%
@@ -521,7 +401,7 @@ export const ArchivePreloader: React.FC<ArchivePreloaderProps> = ({ onComplete }
 
       {/* Bottom Specification Footer */}
       <div className="relative z-10 flex flex-col sm:flex-row items-center justify-between text-[10px] font-mono-archive tracking-[0.15em] text-[#D6CCBA]/45 border-t border-[#D6CCBA]/15 pt-4 gap-2 shrink-0 text-center">
-        <span>390 GSM HOODED TOP · 280 GSM TROUSERS</span>
+        <span>390 GSM HOODIE · 280 GSM TAILORED TROUSERS</span>
         <span>ONE DESIGN · TWO COLOURWAYS · NO REISSUE</span>
       </div>
     </aside>

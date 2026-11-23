@@ -88,10 +88,11 @@ test('SIZE_SPECIFICATIONS contains verified measurements for all sizes with S ma
   assert.equal(SIZE_SPECIFICATIONS.L.status, 'available');
 });
 
-test('CUSTOMER_CARE_DETAILS specifies 14-day statutory rights and Irish COD delivery', () => {
+test('CUSTOMER_CARE_DETAILS specifies 14-day statutory rights and Irish payment/delivery details', () => {
   assert.equal(CUSTOMER_CARE_DETAILS.statutoryCancellationDays, 14);
   assert.equal(CUSTOMER_CARE_DETAILS.shippingCost, 'Complimentary (100% Free)');
-  assert.equal(CUSTOMER_CARE_DETAILS.conciergeEmail, 'noire.ireland@gmail.com');
+  assert.equal(CUSTOMER_CARE_DETAILS.conciergeEmail, 'concierge@noireofficial.ie');
+  assert.ok(CUSTOMER_CARE_DETAILS.paymentMethod.includes('Card'));
   assert.ok(CUSTOMER_CARE_DETAILS.missingInformationNotes.length >= 3);
 });
 

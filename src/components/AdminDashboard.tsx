@@ -793,7 +793,9 @@ export const AdminDashboard: React.FC = () => {
               className="bg-[#1F1E1D] border border-[#2B2A28] px-3 py-2 text-white focus:border-[#D6CCBA] focus:outline-none cursor-pointer"
             >
               <option value="ALL">Payment: All</option>
-              <option value="UNPAID">Payment: UNPAID</option>
+              <option value="PAID">Payment: PAID (Stripe)</option>
+              <option value="AWAITING_PAYMENT">Payment: AWAITING_PAYMENT</option>
+              <option value="UNPAID">Payment: UNPAID (COD)</option>
               <option value="COLLECTED">Payment: COLLECTED</option>
               <option value="REMITTED">Payment: REMITTED</option>
               <option value="REFUNDED">Payment: REFUNDED</option>
@@ -896,9 +898,9 @@ export const AdminDashboard: React.FC = () => {
                         <td className="p-3.5">
                           <span
                             className={`px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider inline-block ${
-                              ord.paymentStatus === 'REMITTED'
+                              ord.paymentStatus === 'REMITTED' || ord.paymentStatus === 'PAID'
                                 ? 'bg-emerald-900/60 text-emerald-300 border border-emerald-500'
-                                : ord.paymentStatus === 'COLLECTED'
+                                : ord.paymentStatus === 'COLLECTED' || ord.paymentStatus === 'AWAITING_PAYMENT'
                                 ? 'bg-amber-900/60 text-amber-300 border border-amber-500'
                                 : 'bg-[#2B2A28] text-[#D6CCBA]/70'
                             }`}
@@ -959,15 +961,15 @@ export const AdminDashboard: React.FC = () => {
                         </td>
                         <td className="p-3.5 font-bold text-white">€{expected}.00</td>
                         <td className="p-3.5 text-amber-300">
-                          {ord.paymentStatus === 'COLLECTED' || ord.paymentStatus === 'REMITTED'
+                          {ord.paymentStatus === 'COLLECTED' || ord.paymentStatus === 'REMITTED' || ord.paymentStatus === 'PAID'
                             ? `€${expected}.00`
                             : '€0.00'}
                         </td>
                         <td className="p-3.5 text-emerald-400">
-                          {ord.paymentStatus === 'REMITTED' ? `€${expected}.00` : '€0.00'}
+                          {ord.paymentStatus === 'REMITTED' || ord.paymentStatus === 'PAID' ? `€${expected}.00` : '€0.00'}
                         </td>
                         <td className="p-3.5 font-bold text-[#FF0800]">
-                          {ord.paymentStatus === 'REMITTED' ? '€0.00' : `€${expected}.00`}
+                          {ord.paymentStatus === 'REMITTED' || ord.paymentStatus === 'PAID' || ord.orderStatus === 'CANCELLED' ? '€0.00' : `€${expected}.00`}
                         </td>
                         <td className="p-3.5">
                           <span className="px-2 py-0.5 bg-[#2B2A28] text-[10px] uppercase tracking-wider">

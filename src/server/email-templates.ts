@@ -51,6 +51,31 @@ export function generateCustomerEmail(order: OrderEmailData): { subject: string;
   const safeEircode = escapeHtml(order.customer.eircode);
   const safeOrderRef = escapeHtml(order.orderReference);
   const totalStr = order.financials.totalEur.toString();
+  const isCod = (order.paymentMethod || '').toUpperCase() === 'COD';
+  const isPaid = (order.paymentStatus || '').toUpperCase() === 'PAID';
+  const paymentMethodLabel = isCod
+    ? 'Cash on Delivery (COD)'
+    : 'Card / Apple Pay / Google Pay (Stripe Checkout)';
+  const nextStepPaymentLine = isCod
+    ? `No payment has been taken. You'll pay the courier €${totalStr} upon delivery.`
+    : isPaid
+    ? `Your Card / Apple Pay / Google Pay payment (€${totalStr}.00) has been received and confirmed. Zero courier cash payment is required at the door.`
+    : `Your allocation is reserved via Card / Apple Pay / Google Pay (€${totalStr}.00). Zero courier cash payment is required at the door.`;
+  const nextStepPaymentHtml = isCod
+    ? `No payment has been taken. You'll pay the courier <span style="color:#FFFFFF; font-weight:400;">&euro;${totalStr}</span> upon delivery.`
+    : isPaid
+    ? `Your <span style="color:#FFFFFF; font-weight:400;">Card / Apple Pay / Google Pay payment (&euro;${totalStr}.00)</span> has been received and confirmed. Zero courier cash payment is required at the door.`
+    : `Your allocation is reserved via <span style="color:#FFFFFF; font-weight:400;">Card / Apple Pay / Google Pay (&euro;${totalStr}.00)</span>. Zero courier cash payment is required at the door.`;
+  const dossierTotalLabel = isCod
+    ? 'TOTAL PAYABLE UPON DELIVERY'
+    : isPaid
+    ? 'TOTAL PAID (CARD / EXPRESS PAY)'
+    : 'TOTAL ALLOCATION (CARD / EXPRESS PAY)';
+  const dossierTotalHtmlLabel = isCod
+    ? 'Total Due to Courier'
+    : isPaid
+    ? 'Total Paid (Card / Express Pay)'
+    : 'Total Allocation (Card / Express Pay)';
   const subject = 'Your order has found its way to NOIRÉ.';
 
   const text = `Hello ${rawFirstName},
@@ -67,7 +92,7 @@ WHAT HAPPENS NEXT?
 
 We'll review your order and send you a confirmation once it's accepted.
 
-No payment has been taken. You'll pay the courier €${totalStr} upon delivery.
+${nextStepPaymentLine}
 
 A small detail worth knowing: NOIRÉ is designed in Ireland and made in our studio in Bangladesh. We make in limited quantities, and when an edition is gone, we don't bring it back.
 
@@ -80,8 +105,8 @@ Designed in Ireland. Made with intention.
 
 --------------------------------------------------
 ALLOCATION DOSSIER: ${order.orderReference}
-PAYMENT METHOD: Cash on Delivery (COD)
-TOTAL PAYABLE UPON DELIVERY: €${totalStr}.00
+PAYMENT METHOD: ${paymentMethodLabel}
+${dossierTotalLabel}: €${totalStr}.00
 
 GARMENTS:
 ${order.items.map(item => `• ${item.quantity}× Atelier NOIRÉ Archive Tracksuit — ${item.colorwayName} (Size ${item.size}) : €${item.subtotalEur}.00`).join('\n')}
@@ -159,7 +184,7 @@ Ireland`;
               </p>
 
               <p style="font-size:14.5px; color:#D6CCBA; margin:0 0 16px 0; font-weight:300; line-height:1.75;">
-                No payment has been taken. You'll pay the courier <span style="color:#FFFFFF; font-weight:400;">&euro;${totalStr}</span> upon delivery.
+                ${nextStepPaymentHtml}
               </p>
 
               <p style="font-size:14.5px; color:#D6CCBA; margin:0 0 16px 0; font-weight:300; line-height:1.75;">
@@ -199,10 +224,10 @@ Ireland`;
                       </tr>
                       <tr>
                         <td style="padding:4px 12px 12px 0; color:#9A948A;">Payment Method</td>
-                        <td style="padding:4px 0 12px 0; text-align:right; color:#D6CCBA;">Cash on Delivery (COD)</td>
+                        <td style="padding:4px 0 12px 0; text-align:right; color:#D6CCBA;">${paymentMethodLabel}</td>
                       </tr>
                       <tr>
-                        <td style="padding:12px 16px 2px 0; color:#FFFFFF; font-weight:700; font-size:13px; border-top:1px solid #3A3936;">Total Due to Courier</td>
+                        <td style="padding:12px 16px 2px 0; color:#FFFFFF; font-weight:700; font-size:13px; border-top:1px solid #3A3936;">${dossierTotalHtmlLabel}</td>
                         <td style="padding:12px 0 2px 0; text-align:right; color:#FFFFFF; font-weight:700; font-size:14px; border-top:1px solid #3A3936; white-space:nowrap;">&euro;${totalStr}.00</td>
                       </tr>
                     </table>
@@ -257,13 +282,23 @@ export function generateAdminEmail(order: OrderEmailData, adminDashboardUrl: str
   const safeEircode = escapeHtml(order.customer.eircode);
   const safeOrderRef = escapeHtml(order.orderReference);
 
+  const isCod = (order.paymentMethod || '').toUpperCase() === 'COD';
+  const adminPaymentMethodText = isCod
+    ? 'Cash on Delivery (COD)'
+    : 'Card / Apple Pay / Google Pay (Stripe Checkout)';
+  const adminPaymentBadgeHtml = isCod
+    ? 'CASH ON DELIVERY (UNPAID)'
+    : 'CARD / APPLE PAY / GOOGLE PAY';
+  const adminTotalTextLabel = isCod ? 'TOTAL PAYABLE BY COURIER' : 'ORDER TOTAL';
+  const adminTotalHtmlLabel = isCod ? 'Total COD Collection:' : 'Total Allocation:';
+
   const text = `NEW ORDER RECEIVED — ATELIER NOIRÉ ARCHIVE DROP
 
 Reference: ${order.orderReference}
 Date: ${order.createdAt}
-Payment Method: Cash on Delivery (COD)
-Payment Status: UNPAID
-Order Status: NEW
+Payment Method: ${adminPaymentMethodText}
+Payment Status: ${order.paymentStatus}
+Order Status: ${order.orderStatus}
 
 CUSTOMER DETAILS:
 Name: ${order.customer.fullName}
@@ -286,7 +321,7 @@ ${order.items.map(i => `- ${i.quantity}× Tracksuit [${i.colorwayName} / Size ${
 
 Subtotal: €${order.financials.subtotalEur}.00
 Shipping: €${order.financials.shippingEur}.00 (Free)
-TOTAL PAYABLE BY COURIER: €${order.financials.totalEur}.00
+${adminTotalTextLabel}: €${order.financials.totalEur}.00
 
 Review and manage this order in the admin dashboard:
 ${adminDashboardUrl}
@@ -375,10 +410,10 @@ ${adminDashboardUrl}
         </tr>
         <tr>
           <td style="padding:8px 12px 8px 0; color:#888888;">Payment Method</td>
-          <td style="padding:8px 0; text-align:right; color:#FF0800; font-weight:bold;">CASH ON DELIVERY (UNPAID)</td>
+          <td style="padding:8px 0; text-align:right; color:#FF0800; font-weight:bold;">${adminPaymentBadgeHtml}</td>
         </tr>
         <tr style="border-top:1px solid #444444;">
-          <td style="padding:12px 12px 12px 0; font-size:15px; font-weight:bold; color:#FFFFFF;">Total COD Collection:</td>
+          <td style="padding:12px 12px 12px 0; font-size:15px; font-weight:bold; color:#FFFFFF;">${adminTotalHtmlLabel}</td>
           <td style="padding:12px 0; text-align:right; font-size:16px; font-weight:bold; color:#FFFFFF; white-space:nowrap;">&euro;${order.financials.totalEur}.00</td>
         </tr>
       </table>
@@ -391,7 +426,7 @@ ${adminDashboardUrl}
     </div>
 
     <div style="font-size:11px; color:#555555; text-align:center; margin-top:20px; border-top:1px solid #222222; padding-top:12px;">
-      Atelier NOIRÉ Order Management System &middot; noire.ireland@gmail.com
+      Atelier NOIRÉ Order Management System &middot; concierge@noireofficial.ie
     </div>
   </div>
 </body>

@@ -41,7 +41,7 @@ const LINKS: FooterLink[] = [
   { label: "Privacy & GDPR", tab: "privacy" },
 ];
 
-const EMAIL = "noire.ireland@gmail.com";
+const EMAIL = "concierge@noireofficial.ie";
 
 const d = (s: number) => ({ ["--d" as string]: `${s}s` } as React.CSSProperties);
 
@@ -188,7 +188,7 @@ const Footer: React.FC<FooterProps> = ({ onOpenCareModal }) => {
         {/* Column 2: Ireland Coverage */}
         <div className="nf-meta-col nf-meta-col-2">
           <p className="nf-meta-text">
-            ALL 26 COUNTIES OF IRELAND* (FREE COD)
+            ALL 26 COUNTIES OF IRELAND* (FREE DELIVERY · CARD &amp; OPTIONAL COD)
           </p>
         </div>
 

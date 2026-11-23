@@ -9,7 +9,7 @@ interface CartItem {
   quantity: number;
 }
 
-interface CompletedOrderData {
+export interface CompletedOrderData {
   orderReference: string;
   customer: {
     fullName: string;
@@ -39,8 +39,16 @@ interface CompletedOrderData {
   };
   paymentMethod: string;
   paymentStatus: string;
+  stripeSessionId?: string;
+  checkoutUrl?: string;
   orderStatus: string;
   createdAt: string;
+}
+
+export interface StripeReturnState {
+  status: 'verifying' | 'paid' | 'cancelled' | 'error';
+  order?: CompletedOrderData;
+  message?: string;
 }
 
 interface CartDrawerProps {
@@ -52,6 +60,12 @@ interface CartDrawerProps {
   onAddToCart?: (colorway: 'carbon' | 'blue-charcoal', size: string) => void;
   onClearCart?: () => void;
   onOpenCareModal?: (tab: CareModalTab) => void;
+  stripeReturnState?: StripeReturnState | null;
+  onDismissStripeReturn?: () => void;
+}
+
+function generateIdempotencyKey(): string {
+  return `idemp_${Date.now()}_${Math.random().toString(36).substring(2, 9)}`;
 }
 
 export const CartDrawer: React.FC<CartDrawerProps> = ({
@@ -63,6 +77,8 @@ export const CartDrawer: React.FC<CartDrawerProps> = ({
   onAddToCart,
   onClearCart,
   onOpenCareModal,
+  stripeReturnState,
+  onDismissStripeReturn,
 }) => {
   // Form fields for Irish customer checkout
   const [fullName, setFullName] = useState<string>('');
@@ -91,11 +107,33 @@ export const CartDrawer: React.FC<CartDrawerProps> = ({
   const [quickSizeCarbon, setQuickSizeCarbon] = useState<string>('L');
   const [quickSizeBlue, setQuickSizeBlue] = useState<string>('L');
 
+  // Primary default payment method ('CARD') with optional Cash on Delivery ('COD')
+  const [paymentMethod, setPaymentMethod] = useState<'CARD' | 'COD'>('CARD');
+
   // Checkout submission states
   const [isSubmitting, setIsSubmitting] = useState<boolean>(false);
+  const [isCancellingPending, setIsCancellingPending] = useState<boolean>(false);
   const [submissionError, setSubmissionError] = useState<string | null>(null);
   const [completedOrder, setCompletedOrder] = useState<CompletedOrderData | null>(null);
-  const [idempotencyKey, setIdempotencyKey] = useState<string>(() => `idemp_${Date.now()}_${Math.random().toString(36).substring(2, 9)}`);
+  const [idempotencyKey, setIdempotencyKey] = useState<string>(() => generateIdempotencyKey());
+
+  const itemsSignature = items.map((i) => `${i.colorway}:${i.size}:${i.quantity}`).join('|');
+
+  useEffect(() => {
+    setIdempotencyKey(generateIdempotencyKey());
+  }, [itemsSignature]);
+
+  // Sync verified paid order when returning from Stripe Checkout
+  useEffect(() => {
+    if (stripeReturnState?.status === 'paid' && stripeReturnState.order) {
+      setCompletedOrder(stripeReturnState.order);
+      setSubmissionError(null);
+      setIdempotencyKey(generateIdempotencyKey());
+    } else if (stripeReturnState?.status === 'cancelled') {
+      setCompletedOrder(null);
+      setIdempotencyKey(generateIdempotencyKey());
+    }
+  }, [stripeReturnState]);
 
   // Freeze background scrolling while inside acquisition dossier
   useEffect(() => {
@@ -156,6 +194,7 @@ export const CartDrawer: React.FC<CartDrawerProps> = ({
       return;
     }
 
+    if (isSubmitting) return;
     setFieldErrors({});
     setIsSubmitting(true);
 
@@ -176,6 +215,7 @@ export const CartDrawer: React.FC<CartDrawerProps> = ({
           size: i.size,
           quantity: i.quantity,
         })),
+        paymentMethod,
         idempotencyKey,
       };
 
@@ -191,6 +231,8 @@ export const CartDrawer: React.FC<CartDrawerProps> = ({
       let data: {
         success?: boolean;
         orderId?: string;
+        stripeSessionId?: string;
+        checkoutUrl?: string;
         order?: CompletedOrderData;
         error?: string;
         errors?: string[];
@@ -227,28 +269,101 @@ export const CartDrawer: React.FC<CartDrawerProps> = ({
 
         const errorMsg = errorList.join(' ');
         setSubmissionError(errorMsg);
+        setIdempotencyKey(generateIdempotencyKey());
         return;
       }
 
-      // Success
-      setCompletedOrder(data.order);
+      const returnedOrder: CompletedOrderData = {
+        ...data.order,
+        checkoutUrl: data.order.checkoutUrl || data.checkoutUrl,
+        stripeSessionId: data.order.stripeSessionId || data.stripeSessionId,
+      };
+
+      if (returnedOrder.paymentMethod === 'CARD' && returnedOrder.checkoutUrl) {
+        try {
+          window.sessionStorage.setItem(
+            'noire_pending_stripe_checkout',
+            JSON.stringify({
+              orderReference: returnedOrder.orderReference,
+              stripeSessionId: returnedOrder.stripeSessionId,
+              items,
+            })
+          );
+        } catch {
+          // Ignore storage restrictions
+        }
+
+        setCompletedOrder(returnedOrder);
+        if (onDismissStripeReturn) {
+          onDismissStripeReturn();
+        }
+        setIdempotencyKey(generateIdempotencyKey());
+
+        // Navigate top-level window when standalone; in cross-origin iframes keep accessible target="_top" fallback CTA visible
+        try {
+          if (window.top === window.self) {
+            window.location.assign(returnedOrder.checkoutUrl);
+          }
+        } catch {
+          // Cross-origin frame access denied; user clicks the target="_top" Stripe Checkout CTA button rendered immediately
+        }
+        return;
+      }
+
+      // Finalized COD or manual fallback order
+      setCompletedOrder(returnedOrder);
       if (onClearCart) {
         onClearCart();
       }
-      // Regenerate idempotency key for future checkouts
-      setIdempotencyKey(`idemp_${Date.now()}_${Math.random().toString(36).substring(2, 9)}`);
+      if (onDismissStripeReturn) {
+        onDismissStripeReturn();
+      }
+      setIdempotencyKey(generateIdempotencyKey());
     } catch (err: unknown) {
       console.error('Order submission network error:', err);
       const msg = err instanceof Error ? err.message : 'Network error.';
       setSubmissionError(`A communication error occurred while connecting to the atelier registry: ${msg}`);
+      setIdempotencyKey(generateIdempotencyKey());
     } finally {
       setIsSubmitting(false);
+    }
+  };
+
+  const handleCancelUnpaidOrder = async () => {
+    if (!completedOrder || completedOrder.paymentStatus === 'PAID' || isCancellingPending) return;
+    setIsCancellingPending(true);
+    try {
+      await fetch('/api/stripe/cancel-session', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          sessionId: completedOrder.stripeSessionId,
+          orderReference: completedOrder.orderReference,
+        }),
+      });
+      try {
+        window.sessionStorage.removeItem('noire_pending_stripe_checkout');
+      } catch {
+        // Ignore
+      }
+      setCompletedOrder(null);
+      setIdempotencyKey(generateIdempotencyKey());
+      setSubmissionError(
+        `Reservation ${completedOrder.orderReference} was cancelled cleanly with zero charge and stock restored. You may edit your order below.`
+      );
+    } catch {
+      setSubmissionError('Unable to reach server to release reservation. Please refresh and try again.');
+    } finally {
+      setIsCancellingPending(false);
     }
   };
 
   const handleResetCheckout = () => {
     setCompletedOrder(null);
     setSubmissionError(null);
+    if (onDismissStripeReturn) {
+      onDismissStripeReturn();
+    }
     onClose();
   };
 
@@ -326,7 +441,17 @@ export const CartDrawer: React.FC<CartDrawerProps> = ({
               touchAction: 'pan-y'
             }}
           >
-            {completedOrder ? (
+            {stripeReturnState?.status === 'verifying' ? (
+              <div className="py-12 px-4 border border-[#D6CCBA]/25 bg-[#141414] text-center space-y-3 font-mono-archive">
+                <div className="w-6 h-6 mx-auto border-2 border-[#D6CCBA] border-t-transparent rounded-full animate-spin" />
+                <p className="text-xs uppercase tracking-[0.2em] text-white">
+                  Verifying Encrypted Stripe Settlement
+                </p>
+                <p className="text-[11px] font-sans text-[#D6CCBA]/70">
+                  Confirming payment status &amp; dispatch dossier with Atelier NOIRÉ registry...
+                </p>
+              </div>
+            ) : completedOrder ? (
               /* ═══════════════════════════════════════════════════════════════
                  ORDER RECORDED CONFIRMATION — STRICT ARCHITECTURAL GRID
                  Minimal, structured, luxury archival dossier layout
@@ -337,16 +462,34 @@ export const CartDrawer: React.FC<CartDrawerProps> = ({
                 <div className="border border-[#2B2A28] bg-[#141414] p-5 text-left">
                   <div className="flex items-center justify-between gap-3 mb-2.5">
                     <div className="flex items-center gap-2 text-[10px] font-mono-archive uppercase tracking-[0.22em] text-[#D6CCBA]/70">
-                      <span className="w-1.5 h-1.5 rounded-full bg-[#FF0800]" />
+                      <span
+                        className={`w-1.5 h-1.5 rounded-full ${
+                          completedOrder.paymentStatus === 'PAID' ? 'bg-emerald-400' : 'bg-[#FF0800]'
+                        }`}
+                      />
                       <span>ARCHIVE DISPATCH RECORD</span>
                     </div>
-                    <span className="text-[10px] font-mono-archive uppercase tracking-wider px-2 py-0.5 bg-[#2B2A28] text-[#D6CCBA] border border-[#D6CCBA]/20">
-                      RECORDED
+                    <span
+                      className={`text-[10px] font-mono-archive uppercase tracking-wider px-2 py-0.5 border ${
+                        completedOrder.paymentStatus === 'PAID'
+                          ? 'bg-emerald-950/70 text-emerald-300 border-emerald-500/50'
+                          : 'bg-[#2B2A28] text-[#D6CCBA] border-[#D6CCBA]/20'
+                      }`}
+                    >
+                      {completedOrder.paymentStatus === 'PAID'
+                        ? 'PAID · CONFIRMED'
+                        : completedOrder.paymentStatus === 'AWAITING_PAYMENT'
+                        ? 'AWAITING PAYMENT'
+                        : 'RECORDED'}
                     </span>
                   </div>
 
                   <h3 className="font-serif-editorial text-2xl sm:text-3xl text-white font-normal leading-tight">
-                    Order Registered
+                    {completedOrder.paymentStatus === 'PAID'
+                      ? 'Payment Verified & Confirmed'
+                      : completedOrder.paymentMethod === 'CARD' && completedOrder.checkoutUrl
+                      ? 'Allocation Held for Checkout'
+                      : 'Order Registered'}
                   </h3>
 
                   <div className="mt-3 pt-3 border-t border-[#2B2A28] flex flex-wrap items-center justify-between gap-2 font-mono-archive text-xs">
@@ -419,20 +562,77 @@ export const CartDrawer: React.FC<CartDrawerProps> = ({
                           <span>Dispatch Courier</span>
                           <span className="text-white">Complimentary</span>
                         </div>
-                        <div className="flex justify-between">
+                        <div className="flex justify-between gap-2">
                           <span>Settlement Method</span>
-                          <span className="text-[#FF0800] font-bold">Cash on Delivery</span>
+                          <span className={`font-bold text-right ${completedOrder.paymentStatus === 'PAID' ? 'text-emerald-400' : 'text-[#FF0800]'}`}>
+                            {completedOrder.paymentMethod === 'COD'
+                              ? 'Cash on Delivery (COD)'
+                              : 'Card / Apple Pay / Google Pay'}
+                          </span>
+                        </div>
+                        <div className="flex justify-between gap-2">
+                          <span>Payment Status</span>
+                          <span className={`font-bold text-right ${completedOrder.paymentStatus === 'PAID' ? 'text-emerald-400' : 'text-white'}`}>
+                            {completedOrder.paymentStatus}
+                          </span>
                         </div>
                       </div>
                     </div>
 
                     <div className="pt-2.5 border-t border-[#2B2A28] flex items-baseline justify-between">
-                      <span className="text-[10px] uppercase tracking-wider text-[#D6CCBA]/60">DUE ON DELIVERY</span>
+                      <span className="text-[10px] uppercase tracking-wider text-[#D6CCBA]/60">
+                        {completedOrder.paymentMethod === 'COD'
+                          ? 'DUE ON DELIVERY'
+                          : completedOrder.paymentStatus === 'PAID'
+                          ? 'TOTAL PAID'
+                          : 'ALLOCATION TOTAL'}
+                      </span>
                       <span className="text-lg font-bold font-serif-editorial text-white">€{completedOrder.financials.totalEur}.00</span>
                     </div>
                   </div>
 
                 </div>
+
+                {completedOrder.paymentMethod !== 'COD' && completedOrder.paymentStatus !== 'PAID' && (
+                  <div className="border border-[#D6CCBA]/35 bg-[#1B1A19] p-4 text-xs font-mono-archive space-y-3">
+                    {completedOrder.checkoutUrl ? (
+                      <>
+                        <p className="text-[11px] text-[#D6CCBA]/90 leading-relaxed">
+                          Your numbered set is reserved for 30 minutes under <strong className="text-white">{completedOrder.orderReference}</strong>. Complete payment securely via Stripe Checkout (Card, Apple Pay, or Google Pay).
+                        </p>
+                        <a
+                          href={completedOrder.checkoutUrl}
+                          target="_top"
+                          rel="noopener noreferrer"
+                          className="w-full py-3 bg-[#FFFFFF] hover:bg-[#D6CCBA] text-[#161616] text-xs font-mono-archive uppercase tracking-[0.2em] font-bold transition-colors flex items-center justify-center gap-2"
+                        >
+                          <span>Proceed to Stripe Checkout — €{completedOrder.financials.totalEur}.00</span>
+                          <span aria-hidden="true">→</span>
+                        </a>
+                        <button
+                          type="button"
+                          onClick={handleCancelUnpaidOrder}
+                          disabled={isCancellingPending}
+                          className="w-full py-2 border border-[#D6CCBA]/25 hover:border-[#FF0800]/60 text-[10px] uppercase tracking-[0.18em] text-[#D6CCBA]/75 hover:text-white transition-colors cursor-pointer disabled:opacity-50"
+                        >
+                          {isCancellingPending ? 'Releasing Allocation...' : 'Cancel Unpaid Reservation & Edit Details'}
+                        </button>
+                      </>
+                    ) : (
+                      <p className="text-[11px] text-[#D6CCBA]/85 leading-relaxed">
+                        Allocation <strong className="text-white">{completedOrder.orderReference}</strong> is logged for Card / Apple Pay / Google Pay settlement. Our Dublin concierge (<a href="mailto:concierge@noireofficial.ie" className="text-white underline underline-offset-4">concierge@noireofficial.ie</a>) will issue your direct Stripe payment link &amp; dispatch confirmation shortly.
+                      </p>
+                    )}
+                  </div>
+                )}
+
+                {completedOrder.paymentStatus === 'PAID' && (
+                  <div className="border border-emerald-500/35 bg-emerald-950/20 p-4 text-xs font-mono-archive">
+                    <p className="text-[11px] text-emerald-200/90 leading-relaxed">
+                      Payment confirmed. Your confirmation dossier has been dispatched and your garment set is queued for 24–48h insured Irish courier fulfillment. Concierge liaison: <a href="mailto:concierge@noireofficial.ie" className="text-white underline underline-offset-4">concierge@noireofficial.ie</a>.
+                    </p>
+                  </div>
+                )}
 
                 {/* Minimalist Return Action */}
                 <button
@@ -449,6 +649,22 @@ export const CartDrawer: React.FC<CartDrawerProps> = ({
 
               /* Empty State with Direct CTA & Quick-Acquire Cards */
               <div className="py-4 space-y-6">
+                {(stripeReturnState?.status === 'cancelled' || stripeReturnState?.status === 'error') && (
+                  <div
+                    role="status"
+                    className={`p-3.5 border text-xs font-mono-archive flex items-start gap-2.5 ${
+                      stripeReturnState.status === 'cancelled'
+                        ? 'bg-[#2B2A28]/70 border-[#D6CCBA]/45 text-[#D6CCBA]'
+                        : 'bg-[#FF0800]/15 border-[#FF0800]/40 text-[#FFFFFF]'
+                    }`}
+                  >
+                    <span className="font-bold text-sm leading-none mt-0.5">
+                      {stripeReturnState.status === 'cancelled' ? '•' : '⚠'}
+                    </span>
+                    <span className="flex-1 leading-relaxed">{stripeReturnState.message}</span>
+                  </div>
+                )}
+
                 <div className="border border-[#D6CCBA]/15 bg-[#2B2A28]/30 p-5 text-left space-y-2.5">
                   <span className="text-[10px] font-mono-archive uppercase tracking-[0.24em] text-[#D6CCBA]/50 block">
                     STATUS: [ ZERO ALLOCATION ASSIGNED ]
@@ -589,8 +805,25 @@ export const CartDrawer: React.FC<CartDrawerProps> = ({
 
             ) : (
 
-              /* Populated Cart & Real COD Checkout Form */
+              /* Populated Cart & Card / Optional COD Checkout Form */
               <>
+                {/* Stripe Return Cancelled or Error Notice */}
+                {(stripeReturnState?.status === 'cancelled' || stripeReturnState?.status === 'error') && (
+                  <div
+                    role="status"
+                    className={`p-3.5 border text-xs font-mono-archive flex items-start gap-2.5 ${
+                      stripeReturnState.status === 'cancelled'
+                        ? 'bg-[#2B2A28]/70 border-[#D6CCBA]/45 text-[#D6CCBA]'
+                        : 'bg-[#FF0800]/15 border-[#FF0800]/40 text-[#FFFFFF]'
+                    }`}
+                  >
+                    <span className="font-bold text-sm leading-none mt-0.5">
+                      {stripeReturnState.status === 'cancelled' ? '•' : '⚠'}
+                    </span>
+                    <span className="flex-1 leading-relaxed">{stripeReturnState.message}</span>
+                  </div>
+                )}
+
                 {/* Error Banner */}
                 {submissionError && (
                   <div className="p-3.5 bg-[#FF0800]/15 border border-[#FF0800]/40 text-xs text-[#FFFFFF] font-mono-archive flex items-start gap-2.5">
@@ -690,33 +923,104 @@ export const CartDrawer: React.FC<CartDrawerProps> = ({
                     <span>Delivery (All 26 counties of Ireland*)</span>
                     <span className="text-[#D6CCBA] font-semibold">FREE</span>
                   </div>
-                  <div className="flex justify-between text-[#D6CCBA]/70">
+                  <div className="flex justify-between text-[#D6CCBA]/70 gap-2">
                     <span>Payment Method</span>
-                    <span className="text-[#D6CCBA] font-semibold">CASH ON DELIVERY (COD)</span>
+                    <span className="text-[#D6CCBA] font-semibold text-right">
+                      {paymentMethod === 'CARD'
+                        ? 'CARD / APPLE PAY / GOOGLE PAY'
+                        : 'CASH ON DELIVERY (COD)'}
+                    </span>
                   </div>
                   <div className="flex justify-between text-[#D6CCBA]/70">
-                    <span>Dublin Provenance Certificate</span>
+                    <span>Archival Presentation Box &amp; Totebag</span>
                     <span className="text-[#D6CCBA] font-semibold">INCLUDED</span>
                   </div>
                   <div className="pt-2 border-t border-[#D6CCBA]/15 flex justify-between text-sm text-[#FFFFFF] font-bold">
-                    <span>Total Due Upon Delivery</span>
+                    <span>
+                      {paymentMethod === 'CARD'
+                        ? 'Total (Insured Irish Courier Included)'
+                        : 'Total Due Upon Delivery'}
+                    </span>
                     <span>€{subtotal}.00</span>
                   </div>
                 </div>
 
-                {/* Explicit COD Explanatory Note */}
-                <div className="p-3 bg-[#1B1A19] border border-[#D6CCBA]/20 text-[11px] font-mono-archive text-[#D6CCBA]/85 space-y-1">
-                  <div className="text-[10px] font-bold uppercase tracking-wider text-[#FF0800]">
-                    PAYMENT TERMS · CASH ON DELIVERY ONLY
-                  </div>
-                  <p className="leading-relaxed">
-                    No card details or advance payments are taken online. You will inspect your garment box and pay <strong className="text-white">€{subtotal}.00</strong> directly to the courier upon delivery anywhere in Ireland.
-                  </p>
-                </div>
-
                 {/* Reservation / Collector Form */}
-                <form id="reservation-form" onSubmit={handleCheckoutSubmit} className="space-y-3 pt-2">
-                  <div className="text-[10px] font-mono-archive uppercase tracking-[0.22em] text-[#D6CCBA]/65">
+                <form id="reservation-form" onSubmit={handleCheckoutSubmit} className="space-y-3 pt-1">
+                  {/* Payment Method Selector: Card / Apple Pay / Google Pay Primary + Optional COD */}
+                  <fieldset className="space-y-2 pb-2">
+                    <legend className="text-[10px] font-mono-archive uppercase tracking-[0.22em] text-[#D6CCBA]/75 mb-1.5">
+                      SELECT PAYMENT METHOD
+                    </legend>
+
+                    <label
+                      className={`flex items-start gap-3 p-3 border cursor-pointer transition-colors ${
+                        paymentMethod === 'CARD'
+                          ? 'bg-[#2B2A28]/70 border-[#D6CCBA] text-[#FFFFFF]'
+                          : 'bg-[#1B1A19] border-[#D6CCBA]/20 text-[#D6CCBA]/80 hover:border-[#D6CCBA]/45'
+                      }`}
+                    >
+                      <input
+                        type="radio"
+                        name="paymentMethod"
+                        value="CARD"
+                        checked={paymentMethod === 'CARD'}
+                        onChange={() => {
+                          setPaymentMethod('CARD');
+                          setIdempotencyKey(generateIdempotencyKey());
+                        }}
+                        className="mt-1 accent-[#D6CCBA] cursor-pointer"
+                      />
+                      <div className="flex-1 min-w-0 font-mono-archive">
+                        <div className="flex items-center justify-between gap-2">
+                          <span className="text-xs font-bold uppercase tracking-wider text-white">
+                            Card / Apple Pay / Google Pay
+                          </span>
+                          <span className="text-[9px] px-1.5 py-0.5 bg-[#D6CCBA] text-[#161616] font-bold uppercase tracking-wider shrink-0">
+                            RECOMMENDED
+                          </span>
+                        </div>
+                        <p className="mt-1 text-[11px] font-sans text-[#D6CCBA]/80 leading-snug">
+                          Instant encrypted Stripe Checkout reservation. Express priority dispatch (24–48h Irish courier).
+                        </p>
+                      </div>
+                    </label>
+
+                    <label
+                      className={`flex items-start gap-3 p-3 border cursor-pointer transition-colors ${
+                        paymentMethod === 'COD'
+                          ? 'bg-[#2B2A28]/70 border-[#D6CCBA] text-[#FFFFFF]'
+                          : 'bg-[#1B1A19] border-[#D6CCBA]/20 text-[#D6CCBA]/80 hover:border-[#D6CCBA]/45'
+                      }`}
+                    >
+                      <input
+                        type="radio"
+                        name="paymentMethod"
+                        value="COD"
+                        checked={paymentMethod === 'COD'}
+                        onChange={() => {
+                          setPaymentMethod('COD');
+                          setIdempotencyKey(generateIdempotencyKey());
+                        }}
+                        className="mt-1 accent-[#D6CCBA] cursor-pointer"
+                      />
+                      <div className="flex-1 min-w-0 font-mono-archive">
+                        <div className="flex items-center justify-between gap-2">
+                          <span className="text-xs font-bold uppercase tracking-wider text-white">
+                            Cash on Delivery (COD — Dublin &amp; 26 Counties)
+                          </span>
+                          <span className="text-[9px] px-1.5 py-0.5 border border-[#D6CCBA]/35 text-[#D6CCBA] uppercase tracking-wider shrink-0">
+                            OPTIONAL
+                          </span>
+                        </div>
+                        <p className="mt-1 text-[11px] font-sans text-[#D6CCBA]/80 leading-snug">
+                          Pay <strong className="text-white">€{subtotal}.00</strong> to the courier upon physical handover anywhere in the 26 counties.
+                        </p>
+                      </div>
+                    </label>
+                  </fieldset>
+
+                  <div className="text-[10px] font-mono-archive uppercase tracking-[0.22em] text-[#D6CCBA]/65 pt-1">
                     COLLECTOR DISPATCH DOSSIER (IRELAND)
                   </div>
 
@@ -933,7 +1237,7 @@ export const CartDrawer: React.FC<CartDrawerProps> = ({
           {/* ═══════════════════════════════════════════════════════════════
               DOCKED PRIMARY ACQUISITION CTA
               ═══════════════════════════════════════════════════════════════ */}
-          {!completedOrder && items.length > 0 && (
+          {!completedOrder && stripeReturnState?.status !== 'verifying' && items.length > 0 && (
             <div className="relative z-20 px-6 py-3.5 sm:px-8 sm:py-4 bg-[#141414] border-t border-[#D6CCBA]/20 shadow-[0_-10px_25px_rgba(0,0,0,0.6)]">
               {/* Sophisticated Client Policies Strip */}
               <div className="mb-3 p-3 bg-[#1B1A19] border border-[#D6CCBA]/25 flex flex-wrap items-center justify-between gap-2.5 shadow-sm">
@@ -955,7 +1259,7 @@ export const CartDrawer: React.FC<CartDrawerProps> = ({
                     onClick={() => onOpenCareModal ? onOpenCareModal('shipping') : (window.location.hash = '#shipping')}
                     className="px-3 py-1.5 text-[10.5px] font-mono-archive uppercase tracking-wider font-bold border border-[#D6CCBA]/35 hover:border-[#D6CCBA] hover:bg-[#D6CCBA] hover:text-[#161616] text-[#D6CCBA] transition-all cursor-pointer shadow-sm flex items-center gap-1.5"
                   >
-                    <span>Delivery & COD</span>
+                    <span>Delivery &amp; Payment</span>
                     <span className="text-[10px] opacity-60">→</span>
                   </button>
                 </div>
@@ -971,7 +1275,11 @@ export const CartDrawer: React.FC<CartDrawerProps> = ({
                   <span>Securing Allocation...</span>
                 ) : (
                   <>
-                    <span>Confirm COD Order — €{subtotal}</span>
+                    <span>
+                      {paymentMethod === 'CARD'
+                        ? `Continue to Card / Express Pay — €${subtotal}`
+                        : `Confirm COD Order — €${subtotal}`}
+                    </span>
                     <span>→</span>
                   </>
                 )}
@@ -984,7 +1292,7 @@ export const CartDrawer: React.FC<CartDrawerProps> = ({
               ═══════════════════════════════════════════════════════════════ */}
           <div className="relative z-10 px-6 py-3.5 bg-[#0F0F0F] border-t border-[#D6CCBA]/15 text-[10px] font-mono-archive text-[#D6CCBA]/50 flex flex-col sm:flex-row sm:items-center justify-between gap-1.5">
             <span>• STRICTLY 88 NUMBERED PIECES · NO REISSUE</span>
-            <span>DUBLIN STUDIO ARCHIVE &middot; CASH ON DELIVERY</span>
+            <span>DUBLIN STUDIO ARCHIVE &middot; CARD &amp; OPTIONAL COD</span>
           </div>
         </div>
       </div>

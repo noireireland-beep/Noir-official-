@@ -7,6 +7,8 @@ export const VALID_COUNTIES = [
 
 export const VALID_SIZES = ['S', 'M', 'L', 'XL', 'XXL'] as const;
 export const VALID_COLORWAYS = ['carbon', 'blue-charcoal'] as const;
+export const VALID_PAYMENT_METHODS = ['CARD', 'COD'] as const;
+export type PaymentMethod = (typeof VALID_PAYMENT_METHODS)[number];
 export const UNIT_PRICE_EUR = 88;
 
 export interface CheckoutPayload {
@@ -25,6 +27,7 @@ export interface CheckoutPayload {
     size: string;
     quantity: number;
   }>;
+  paymentMethod?: PaymentMethod;
   idempotencyKey?: string;
 }
 
@@ -104,7 +107,7 @@ export function validateCheckoutPayload(payload: unknown): ValidationResult {
   }
 
   if (!phone || !validateIrishPhone(phone)) {
-    errors.push('Valid Irish phone number is required (e.g. +353 87 123 4567 or 087 123 4567) so courier can contact you for delivery.');
+    errors.push('Valid Irish phone number is required (e.g. +353 87 123 4567 or 087 123 4567) for courier & dispatch updates.');
   }
 
   if (!streetAddress || typeof streetAddress !== 'string' || streetAddress.trim().length < 4) {
@@ -126,6 +129,17 @@ export function validateCheckoutPayload(payload: unknown): ValidationResult {
 
   if (!eircode || !validateEircode(eircode)) {
     errors.push('Valid Irish Eircode is required (e.g. D02 X285).');
+  }
+
+  // Payment method validation (CARD is primary default; COD is optional)
+  let resolvedPaymentMethod: PaymentMethod = 'CARD';
+  if (data.paymentMethod !== undefined && data.paymentMethod !== null && String(data.paymentMethod).trim() !== '') {
+    const normalizedMethod = String(data.paymentMethod).trim().toUpperCase();
+    if (normalizedMethod === 'CARD' || normalizedMethod === 'COD') {
+      resolvedPaymentMethod = normalizedMethod;
+    } else {
+      errors.push('Invalid payment method. Allowed: CARD (Card / Apple Pay / Google Pay), COD (Cash on Delivery).');
+    }
   }
 
   // Items validation
@@ -175,6 +189,7 @@ export function validateCheckoutPayload(payload: unknown): ValidationResult {
       size: item.size.trim().toUpperCase(),
       quantity: Math.floor(item.quantity)
     })),
+    paymentMethod: resolvedPaymentMethod,
     idempotencyKey: data.idempotencyKey?.trim()
   };
 

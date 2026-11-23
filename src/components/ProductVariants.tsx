@@ -1032,9 +1032,32 @@ export const ProductVariants: React.FC<ProductVariantsProps> = ({
                       className="text-[10px] sm:text-[11px] font-mono-archive tracking-[0.16em] uppercase text-center sm:text-right font-semibold"
                       style={{ color: isBlue ? '#8FA9C4' : '#161616' }}
                     >
-                      *Free delivery to all 26 counties of Ireland*
+                      Card / Apple Pay / Google Pay or optional COD · Free Irish courier
                     </p>
                   </div>
+
+                  {/* Trust & Fulfillment Badge Row near Acquire CTA */}
+                  <ul
+                    aria-label="Trust and fulfillment guarantees"
+                    className="mt-2 pt-2.5 border-t flex flex-wrap items-center justify-start sm:justify-end gap-x-4 gap-y-1.5 text-[10px] font-mono-archive uppercase tracking-[0.12em] font-semibold w-full"
+                    style={{
+                      borderColor: isBlue ? 'rgba(70, 84, 98, 0.4)' : 'rgba(22, 22, 22, 0.14)',
+                      color: isBlue ? '#BBC6D0' : '#2B2A28',
+                    }}
+                  >
+                    <li className="inline-flex items-center gap-1.5">
+                      <span className="w-1.5 h-1.5 rounded-full bg-[#10b981] shrink-0" aria-hidden="true" />
+                      <span>Dispatched from Ireland (24–48h Courier)</span>
+                    </li>
+                    <li className="inline-flex items-center gap-1.5">
+                      <span className="w-1.5 h-1.5 rounded-full shrink-0" style={{ backgroundColor: isBlue ? '#8FA9C4' : '#161616' }} aria-hidden="true" />
+                      <span>14-Day Statutory Irish Return Guarantee</span>
+                    </li>
+                    <li className="inline-flex items-center gap-1.5">
+                      <span className="w-1.5 h-1.5 rounded-full bg-[#FF0800] shrink-0" aria-hidden="true" />
+                      <span>Strictly 88 Numbered Pieces — Zero Reissues</span>
+                    </li>
+                  </ul>
 
                   {/* Saved Variants Drawer/Panel */}
                   {showSavedPanel && wishlist.length > 0 && (
@@ -1142,7 +1165,7 @@ export const ProductVariants: React.FC<ProductVariantsProps> = ({
                         : 'bg-[#FFFFFF] text-[#161616] border-[#161616]/30 hover:border-[#161616] hover:bg-[#161616] hover:text-[#FFFFFF]'
                     }`}
                   >
-                    <span>Delivery & COD</span>
+                    <span>Delivery &amp; Payment</span>
                     <span className="text-[10px] opacity-60 group-hover:opacity-100 group-hover:translate-x-0.5 transition-all">→</span>
                   </button>
 
@@ -1168,8 +1191,16 @@ export const ProductVariants: React.FC<ProductVariantsProps> = ({
             ═══════════════════════════════════════════════════════════════ */}
         <div className="mt-10 sm:mt-14 pt-8 sm:pt-10 border-t border-b border-[#D6CCBA]/15 pb-8 sm:pb-10 transition-colors duration-500">
           
-          <div className="flex items-center justify-center text-[10px] sm:text-xs font-mono-archive uppercase tracking-[0.24em] text-[#D6CCBA]/80 mb-6">
-            <span>STRICTLY NUMBERED</span>
+          <div className="flex flex-col items-center text-center gap-2 mb-7">
+            <span className="text-[10px] sm:text-xs font-mono-archive uppercase tracking-[0.24em] text-[#D6CCBA]/80">
+              STRICTLY NUMBERED · ARCHITECTURAL FABRICATION
+            </span>
+            <p className="max-w-3xl text-xs sm:text-sm font-sans text-[#D6CCBA] leading-relaxed">
+              Heavyweight 390 GSM loopback cotton fleece hoodie paired with tailored 280 GSM structured trousers—engineered for a clean, breathable architectural drape without knee bagging.
+            </p>
+            <p className="max-w-3xl text-xs sm:text-[13px] font-sans text-[#D6CCBA]/80 leading-relaxed">
+              Arrives in an archival presentation box with a numbered Certificate of Origin and complimentary 100% natural fibre embroidered tote bag. Dispatched across all 26 counties of Ireland.
+            </p>
           </div>
 
           {/* 6-Column Unboxed Specification Strip */}
@@ -1184,7 +1215,7 @@ export const ProductVariants: React.FC<ProductVariantsProps> = ({
                 390 GSM Fleece
               </p>
               <p className="font-sans text-xs text-[#D6CCBA] font-normal mt-1 leading-relaxed">
-                Unbrushed loopback cotton with double-layer hood.
+                Heavyweight loopback cotton fleece hoodie with double-layer hood.
               </p>
             </div>
 
@@ -1194,10 +1225,10 @@ export const ProductVariants: React.FC<ProductVariantsProps> = ({
                 TROUSERS
               </span>
               <p className="font-serif-editorial text-base sm:text-lg text-[#D6CCBA] font-medium leading-tight">
-                280 GSM Fleece
+                280 GSM Structured
               </p>
               <p className="font-sans text-xs text-[#D6CCBA] font-normal mt-1 leading-relaxed">
-                Relaxed straight drape with internal drawcord.
+                Clean, breathable architectural drape without knee bagging.
               </p>
             </div>
 
@@ -1210,7 +1241,7 @@ export const ProductVariants: React.FC<ProductVariantsProps> = ({
                 88 Numbered Sets
               </p>
               <p className="font-sans text-xs text-[#D6CCBA] font-normal mt-1 leading-relaxed">
-                44 Noir · 44 Blue worldwide. No reissue.
+                44 Noir · 44 Blue worldwide. Zero reissues.
               </p>
             </div>
 
@@ -1223,20 +1254,20 @@ export const ProductVariants: React.FC<ProductVariantsProps> = ({
                 Dublin × Dhaka
               </p>
               <p className="font-sans text-xs text-[#D6CCBA] font-normal mt-1 leading-relaxed">
-                Patterned in Dublin, crafted in small atelier.
+                Designed in Dublin; dispatched across all 26 counties of Ireland.
               </p>
             </div>
 
             {/* Spec 05: Presentation */}
             <div className="pt-2 sm:pt-0 sm:pr-3 lg:border-r border-[#D6CCBA]/10">
               <span className="font-mono-archive text-[10px] sm:text-[11px] uppercase tracking-[0.2em] text-[#D6CCBA]/80 block mb-1">
-                PACKAGING
+                GIFT BOX
               </span>
               <p className="font-serif-editorial text-base sm:text-lg text-[#D6CCBA] font-medium leading-tight">
-                Archival Cloth Box
+                Archival Box &amp; COA
               </p>
               <p className="font-sans text-xs text-[#D6CCBA] font-normal mt-1 leading-relaxed">
-                Rigid black presentation box with certificate.
+                Archival presentation box with numbered Certificate of Origin.
               </p>
             </div>
 
@@ -1246,10 +1277,10 @@ export const ProductVariants: React.FC<ProductVariantsProps> = ({
                 INCLUSIONS
               </span>
               <p className="font-serif-editorial text-base sm:text-lg text-[#D6CCBA] font-medium leading-tight">
-                Natural Totebag
+                Embroidered Tote
               </p>
               <p className="font-sans text-xs text-[#D6CCBA] font-normal mt-1 leading-relaxed">
-                100% natural fibre embroidered archive bag.
+                Complimentary 100% natural fibre embroidered tote bag.
               </p>
             </div>
 

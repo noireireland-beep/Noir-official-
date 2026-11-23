@@ -193,8 +193,9 @@ test('7. Administrator Email generation contains all dense operational audit dat
   assert.ok(adminEmail.text.includes('https://atelier-noire.vercel.app/admin'));
 });
 
-test('8. Administrator authorization allowlist strictly enforces noire.ireland@gmail.com', () => {
+test('8. Administrator authorization allowlist strictly enforces owner and concierge emails', () => {
   assert.ok(ADMIN_ALLOWLIST.includes('noire.ireland@gmail.com'));
+  assert.ok(ADMIN_ALLOWLIST.includes('concierge@noireofficial.ie'));
   assert.equal(ADMIN_ALLOWLIST.includes('random.user@gmail.com'), false);
   assert.equal(ADMIN_ALLOWLIST.includes('attacker@evil.com'), false);
 });
@@ -702,5 +703,43 @@ test('18. Customer email is pure for direct forwarding while Admin email holds r
       fs.unlinkSync(storeFile);
     }
   }
+});
+
+test('19. Card / Apple Pay / Google Pay order emails avoid COD-only messaging and reference concierge@noireofficial.ie', () => {
+  const cardOrder = {
+    orderReference: 'NOIRE-88-CARD-TEST',
+    customer: {
+      ...sampleOrderPayload.customer,
+      country: 'IE',
+    },
+    items: [
+      {
+        colorway: 'blue-charcoal',
+        colorwayName: 'Blue Charcoal',
+        size: 'M',
+        quantity: 1,
+        unitPriceEur: 88,
+        subtotalEur: 88,
+      },
+    ],
+    financials: {
+      subtotalEur: 88,
+      shippingEur: 0,
+      totalEur: 88,
+      currency: 'EUR',
+    },
+    paymentMethod: 'CARD',
+    paymentStatus: 'AWAITING_PAYMENT',
+    orderStatus: 'NEW',
+    createdAt: new Date().toISOString(),
+  };
+
+  const customerCopy = generateCustomerEmail(cardOrder);
+  assert.ok(customerCopy.text.includes('Card / Apple Pay / Google Pay'));
+  assert.equal(customerCopy.text.includes('Cash on Delivery'), false);
+
+  const adminCopy = generateAdminEmail(cardOrder, 'https://www.noireofficial.ie/admin');
+  assert.ok(adminCopy.text.includes('Card / Apple Pay / Google Pay'));
+  assert.ok(adminCopy.html.includes('concierge@noireofficial.ie'));
 });
 

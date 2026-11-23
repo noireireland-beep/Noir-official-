@@ -2,10 +2,10 @@
   "entities": {
     "Order": {
       "title": "Order",
-      "description": "Atelier NOIRÉ Archive Drop customer order dossier (Cash on Delivery)",
+      "description": "Atelier NOIRÉ Archive Drop customer order dossier (Card / Express Pay & optional Cash on Delivery)",
       "type": "object",
       "properties": {
-        "orderReference": { "type": "string", "description": "Unique non-guessable reference e.g. NOIRE-88-COD-XXXX" },
+        "orderReference": { "type": "string", "description": "Unique non-guessable reference e.g. NOIRE-88-CARD-XXXX" },
         "customer": {
           "type": "object",
           "description": "Customer contact and verified Irish postal address"
@@ -18,8 +18,13 @@
           "type": "object",
           "description": "Subtotal, shipping fee (0 EUR), and final total EUR"
         },
-        "paymentMethod": { "type": "string", "enum": ["COD"] },
-        "paymentStatus": { "type": "string", "enum": ["UNPAID", "COLLECTED", "REMITTED", "REFUNDED"] },
+        "paymentMethod": { "type": "string", "enum": ["CARD", "COD"] },
+        "paymentStatus": { "type": "string", "enum": ["AWAITING_PAYMENT", "PAID", "UNPAID", "COLLECTED", "REMITTED", "REFUNDED"] },
+        "stripeSessionId": { "type": "string" },
+        "stripePaymentIntentId": { "type": "string" },
+        "checkoutUrl": { "type": "string" },
+        "paidConfirmationSent": { "type": "boolean" },
+        "paidAt": { "type": "string", "format": "date-time" },
         "orderStatus": { "type": "string", "enum": ["NEW", "CONFIRMED", "PROCESSING", "DISPATCHED", "DELIVERED", "DELIVERY_FAILED", "CANCELLED"] },
         "statusHistory": {
           "type": "array",
@@ -99,7 +104,7 @@
         "courierName": { "type": "string" },
         "trackingNumber": { "type": "string" },
         "collectionDate": { "type": "string", "format": "date-time" },
-        "settlementStatus": { "type": "string", "enum": ["PENDING_COLLECTION", "COLLECTED_BY_COURIER", "REMITTED_TO_BANK", "DISCREPANCY"] },
+        "settlementStatus": { "type": "string", "enum": ["AWAITING_STRIPE_PAYMENT", "PAID_VIA_STRIPE", "PAYMENT_CANCELLED", "PENDING_COLLECTION", "COLLECTED_BY_COURIER", "REMITTED_TO_BANK", "DISCREPANCY"] },
         "amountRemittedEur": { "type": "number" },
         "remittanceDate": { "type": "string", "format": "date-time" },
         "outstandingAmountEur": { "type": "number" },

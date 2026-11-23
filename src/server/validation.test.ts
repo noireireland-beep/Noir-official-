@@ -74,6 +74,24 @@ test('validateCheckoutPayload validates full customer and item specifications', 
   assert.equal(result.sanitized?.customer.eircode, 'D02 X285');
   assert.equal(result.sanitized?.customer.county, 'Dublin');
 
+  // Default paymentMethod should be CARD
+  assert.equal(result.sanitized?.paymentMethod, 'CARD');
+
+  // Explicit COD paymentMethod accepted
+  const codResult = validateCheckoutPayload({ ...validPayload, paymentMethod: 'COD' });
+  assert.equal(codResult.valid, true);
+  assert.equal(codResult.sanitized?.paymentMethod, 'COD');
+
+  // Explicit lowercase card normalized to CARD
+  const cardResult = validateCheckoutPayload({ ...validPayload, paymentMethod: 'card' });
+  assert.equal(cardResult.valid, true);
+  assert.equal(cardResult.sanitized?.paymentMethod, 'CARD');
+
+  // Reject invalid paymentMethod
+  const invalidPayResult = validateCheckoutPayload({ ...validPayload, paymentMethod: 'CRYPTO' });
+  assert.equal(invalidPayResult.valid, false);
+  assert.ok(invalidPayResult.errors.some(e => e.includes('Invalid payment method')));
+
   // Reject invalid county
   const invalidCountyPayload = {
     ...validPayload,

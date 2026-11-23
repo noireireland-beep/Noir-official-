@@ -78,6 +78,7 @@ function vercelApiDevPlugin(): Plugin {
             url: fullUrl,
             query,
             body,
+            rawBody,
             cookies: {},
           });
 

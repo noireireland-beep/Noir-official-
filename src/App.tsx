@@ -11,7 +11,11 @@ import { Navigation } from './components/Navigation';
 import { HeroSequence } from './components/HeroSequence';
 import { ProductVariants } from './components/ProductVariants';
 import { RedemptionDrop } from './components/RedemptionDrop';
-import { CartDrawer } from './components/CartDrawer';
+import {
+  CartDrawer,
+  type CompletedOrderData,
+  type StripeReturnState,
+} from './components/CartDrawer';
 import { Footer } from './components/Footer';
 import { PolaroidSection } from './components/PolaroidSection';
 import { ArchivePreloader } from './components/ArchivePreloader';
@@ -47,12 +51,21 @@ export default function App() {
 
   const [selectedColor, setSelectedColor] = useState<'carbon' | 'blue-charcoal'>('carbon');
   const [cartItems, setCartItems] = useState<CartItem[]>([]);
-  const [isCartOpen, setIsCartOpen] = useState<boolean>(false);
+  const [isCartOpen, setIsCartOpen] = useState<boolean>(() => {
+    if (typeof window === 'undefined') return false;
+    const s = new URLSearchParams(window.location.search).get('stripe_status');
+    return s === 'success' || s === 'cancelled';
+  });
   const [isCareModalOpen, setIsCareModalOpen] = useState<boolean>(false);
   const [careModalTab, setCareModalTab] = useState<CareModalTab>('returns');
-  const [isArchiveReady, setIsArchiveReady] = useState<boolean>(false);
+  const [isArchiveReady, setIsArchiveReady] = useState<boolean>(() => {
+    if (typeof window === 'undefined') return false;
+    const s = new URLSearchParams(window.location.search).get('stripe_status');
+    return s === 'success' || s === 'cancelled';
+  });
+  const [stripeReturnState, setStripeReturnState] = useState<StripeReturnState | null>(null);
   const [transitionLabel, setTransitionLabel] = useState<string>('ENTERING ARCHIVE');
-  const isArchiveReadyRef = React.useRef<boolean>(false);
+  const isArchiveReadyRef = React.useRef<boolean>(isArchiveReady);
   const lenisRef = React.useRef<Lenis | null>(null);
   const transitionCurtainRef = React.useRef<HTMLDivElement | null>(null);
   const isStoryTransitioningRef = React.useRef<boolean>(false);
@@ -74,6 +87,179 @@ export default function App() {
       window.removeEventListener('hashchange', handleLocationChange);
     };
   }, []);
+
+  // Verify or release pending Stripe Checkout returns (?stripe_status=success|cancelled)
+  useEffect(() => {
+    if (typeof window === 'undefined' || isAdminRoute) return;
+
+    const params = new URLSearchParams(window.location.search);
+    const stripeStatus = params.get('stripe_status');
+    if (stripeStatus !== 'success' && stripeStatus !== 'cancelled') return;
+
+    const sessionId = (params.get('session_id') || '').trim();
+    const orderRef = (params.get('order_ref') || '').trim();
+
+    let cancelled = false;
+    setIsCartOpen(true);
+
+    const cleanStripeQueryParams = () => {
+      const nextParams = new URLSearchParams(window.location.search);
+      nextParams.delete('stripe_status');
+      nextParams.delete('session_id');
+      nextParams.delete('order_ref');
+      const nextSearch = nextParams.toString();
+      const cleanUrl =
+        window.location.pathname +
+        (nextSearch ? `?${nextSearch}` : '') +
+        window.location.hash;
+      window.history.replaceState(null, '', cleanUrl);
+    };
+
+    const PENDING_STORAGE_KEY = 'noire_pending_stripe_checkout';
+
+    const run = async () => {
+      if (stripeStatus === 'success') {
+        if (!sessionId) {
+          if (!cancelled) {
+            setStripeReturnState({
+              status: 'error',
+              message:
+                'Stripe session identifier was missing on return. Please contact concierge@noireofficial.ie with your reference if a payment was completed.',
+            });
+            cleanStripeQueryParams();
+          }
+          return;
+        }
+
+        setStripeReturnState({ status: 'verifying' });
+        try {
+          const res = await fetch('/api/stripe/verify-session', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              sessionId,
+              orderReference: orderRef || undefined,
+            }),
+          });
+          const data = (await res.json()) as {
+            success?: boolean;
+            paid?: boolean;
+            order?: CompletedOrderData;
+            error?: string;
+          };
+
+          if (cancelled) return;
+
+          if (res.ok && data.success && data.paid && data.order) {
+            try {
+              window.sessionStorage.removeItem(PENDING_STORAGE_KEY);
+            } catch {
+              // Ignore storage restrictions
+            }
+            setCartItems([]);
+            setStripeReturnState({ status: 'paid', order: data.order });
+          } else {
+            setStripeReturnState({
+              status: 'error',
+              message:
+                data.error ||
+                'Payment verification could not be confirmed yet. If you closed checkout before paying, zero charge was taken.',
+            });
+          }
+        } catch {
+          if (!cancelled) {
+            setStripeReturnState({
+              status: 'error',
+              message:
+                'Unable to reach the Atelier NOIRÉ registry to verify your Stripe session. Please refresh or contact concierge@noireofficial.ie.',
+            });
+          }
+        } finally {
+          if (!cancelled) {
+            cleanStripeQueryParams();
+          }
+        }
+        return;
+      }
+
+      // stripeStatus === 'cancelled'
+      let fallbackSessionId = sessionId;
+      let fallbackOrderRef = orderRef;
+
+      try {
+        const rawPending = window.sessionStorage.getItem(PENDING_STORAGE_KEY);
+        if (rawPending) {
+          const parsed = JSON.parse(rawPending) as {
+            orderReference?: string;
+            stripeSessionId?: string;
+            items?: CartItem[];
+          };
+          if (!fallbackOrderRef && parsed.orderReference) {
+            fallbackOrderRef = parsed.orderReference;
+          }
+          if (!fallbackSessionId && parsed.stripeSessionId) {
+            fallbackSessionId = parsed.stripeSessionId;
+          }
+          if (Array.isArray(parsed.items) && parsed.items.length > 0) {
+            setCartItems((prev) => (prev.length === 0 ? parsed.items! : prev));
+          }
+          window.sessionStorage.removeItem(PENDING_STORAGE_KEY);
+        }
+      } catch {
+        // Ignore storage errors
+      }
+
+      try {
+        if (fallbackSessionId || fallbackOrderRef) {
+          const res = await fetch('/api/stripe/cancel-session', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              sessionId: fallbackSessionId || undefined,
+              orderReference: fallbackOrderRef || undefined,
+            }),
+          });
+          const data = (await res.json()) as {
+            alreadyPaid?: boolean;
+            order?: CompletedOrderData;
+          };
+
+          if (cancelled) return;
+
+          if (res.status === 409 && data.alreadyPaid && data.order) {
+            setCartItems([]);
+            setStripeReturnState({ status: 'paid', order: data.order });
+            return;
+          }
+        }
+
+        if (!cancelled) {
+          setStripeReturnState({
+            status: 'cancelled',
+            message:
+              'Stripe Checkout was cancelled — zero charge was taken and your inventory reservation has been released. You may retry Card / Express Pay or select Cash on Delivery below.',
+          });
+        }
+      } catch {
+        if (!cancelled) {
+          setStripeReturnState({
+            status: 'cancelled',
+            message:
+              'Stripe Checkout was cancelled before payment. You may retry Card / Express Pay or select Cash on Delivery below.',
+          });
+        }
+      } finally {
+        if (!cancelled) {
+          cleanStripeQueryParams();
+        }
+      }
+    };
+
+    run();
+    return () => {
+      cancelled = true;
+    };
+  }, [isAdminRoute]);
 
   // Hash listener for direct deep-linking to Customer Care & Policies
   useEffect(() => {
@@ -629,6 +815,8 @@ export default function App() {
         onAddToCart={handleAddToCart}
         onClearCart={() => setCartItems([])}
         onOpenCareModal={handleOpenCareModal}
+        stripeReturnState={stripeReturnState}
+        onDismissStripeReturn={() => setStripeReturnState(null)}
       />
 
       {/* Footnote & Heritage Statement with accessible policy links */}

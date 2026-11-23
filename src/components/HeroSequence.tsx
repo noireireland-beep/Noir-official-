@@ -685,16 +685,17 @@ export const HeroSequence: React.FC<HeroSequenceProps> = ({
             <span>TWO COLOURWAYS · 88 NUMBERED SETS</span>
           </div>
 
-          {/* Mobile: Apple Liquid Glass Skip capsule with SVG chromatic displacement */}
+          {/* Mobile: Apple Clear Liquid Glass Skip capsule with scroll-triggered optics */}
           {onSkipStory && (
             <div className="flex md:hidden items-center justify-end">
               <LiquidGlassBar
                 as="button"
                 type="button"
                 onClick={onSkipStory}
-                frostOpacity={0.2}
-                saturation={1.3}
-                className="pointer-events-auto inline-flex items-center justify-center min-h-[36px] sm:min-h-[38px] px-3.5 sm:px-4 py-1.5 border border-white/15 font-mono-archive text-[10px] sm:text-[11px] font-medium uppercase tracking-[0.18em] sm:tracking-[0.2em] text-[#F5EFEB] hover:text-white transition-transform duration-200 cursor-pointer whitespace-nowrap active:scale-[0.97]"
+                frostOpacity={0.12}
+                saturation={1.12}
+                scrollProgress={storyState.percent / 100}
+                className="pointer-events-auto inline-flex items-center justify-center min-h-[36px] sm:min-h-[38px] px-3.5 sm:px-4 py-1.5 border border-white/20 font-mono-archive text-[10px] sm:text-[11px] font-medium uppercase tracking-[0.18em] sm:tracking-[0.2em] text-[#F5EFEB] hover:text-white transition-transform duration-200 cursor-pointer whitespace-nowrap active:scale-[0.97]"
               >
                 <span style={{ textShadow: '0 1px 2px rgba(0, 0, 0, 0.45)' }}>Skip intro</span>
                 <span aria-hidden="true" className="text-[#FF0800] font-bold">→</span>
@@ -703,7 +704,7 @@ export const HeroSequence: React.FC<HeroSequenceProps> = ({
           )}
         </div>
 
-        {/* Mobile Active Storytelling Apple Liquid Glass Bar (<768px) */}
+        {/* Mobile Active Storytelling Apple Clear Liquid Glass Bar (<768px) */}
         {onSkipStory && (
           <div
             className={`md:hidden absolute top-[4.5rem] sm:top-[4.75rem] inset-x-2.5 min-[375px]:inset-x-3.5 sm:inset-x-6 z-[45] transition-all duration-500 ease-[cubic-bezier(0.22,1,0.36,1)] ${
@@ -714,9 +715,10 @@ export const HeroSequence: React.FC<HeroSequenceProps> = ({
             aria-hidden={!storyState.isStoryActive}
           >
             <LiquidGlassBar
-              frostOpacity={0.22}
-              saturation={1.25}
-              className="w-full max-w-[540px] mx-auto px-3 min-[375px]:px-3.5 sm:px-4.5 py-2 sm:py-2.5 border border-white/15"
+              frostOpacity={0.14}
+              saturation={1.12}
+              scrollProgress={storyState.percent / 100}
+              className="w-full max-w-[540px] mx-auto px-3 min-[375px]:px-3.5 sm:px-4.5 py-2 sm:py-2.5 border border-white/20"
             >
               <div className="flex items-center justify-between gap-1.5 min-[375px]:gap-2.5 sm:gap-3">
                 <div

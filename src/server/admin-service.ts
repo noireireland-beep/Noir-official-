@@ -7,7 +7,7 @@ import {
   reconcileCodRecord,
 } from './storage-store.js';
 
-export const ADMIN_ALLOWLIST = ['noire.ireland@gmail.com'];
+export const ADMIN_ALLOWLIST = ['noire.ireland@gmail.com', 'concierge@noireofficial.ie'];
 export const ADMIN_CONFIGURED_PASSWORD = 'finalrun911';
 const ADMIN_HMAC_SECRET = process.env.ADMIN_SESSION_SECRET || 'atelier_noire_hmac_secret_2026_finalrun';
 
@@ -175,11 +175,11 @@ export async function getAdminDashboardStats(): Promise<{
 
     if (data.orderStatus !== 'CANCELLED') {
       const amount = data.financials?.totalEur || 0;
-      if (data.paymentStatus === 'UNPAID') {
+      if (data.paymentStatus === 'UNPAID' || data.paymentStatus === 'AWAITING_PAYMENT') {
         outstandingCodEur += amount;
       } else if (data.paymentStatus === 'COLLECTED') {
         collectedCodEur += amount;
-      } else if (data.paymentStatus === 'REMITTED') {
+      } else if (data.paymentStatus === 'REMITTED' || data.paymentStatus === 'PAID') {
         remittedCodEur += amount;
       }
     }

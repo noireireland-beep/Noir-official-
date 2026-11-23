@@ -436,13 +436,13 @@ export const SIZE_SPECIFICATIONS: Record<string, GarmentSizeDetail> = {
 };
 
 export const CUSTOMER_CARE_DETAILS = {
-  conciergeEmail: 'noire.ireland@gmail.com',
+  conciergeEmail: 'concierge@noireofficial.ie',
   operatingHours: 'Monday – Friday, 09:00 – 18:00 IST',
   statutoryCancellationDays: 14,
   shippingTerritory: 'Republic of Ireland (All 26 counties of Ireland*)',
   shippingMethod: 'Insured Tracked Courier Service',
   shippingCost: 'Complimentary (100% Free)',
-  paymentMethod: 'Cash on Delivery (COD) upon physical handover',
+  paymentMethod: 'Card / Apple Pay / Google Pay (Stripe Checkout) or optional Cash on Delivery (COD)',
   estimatedProcessingTime: '1 – 2 business days',
   estimatedTransitTime: '2 – 3 business days post-dispatch',
   missingInformationNotes: [

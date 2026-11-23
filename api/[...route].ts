@@ -18,12 +18,41 @@ import {
   getNotificationJobsForOrder,
 } from '../src/server/storage-store.js';
 import { resendCustomerEmail } from '../src/server/notifications.js';
+import {
+  verifyAndFinalizeStripePayment,
+  cancelAndReleaseStripeOrder,
+} from '../src/server/orders-service.js';
+import {
+  getSafeStripeStatus,
+  verifyStripeWebhookSignature,
+} from '../src/server/stripe-service.js';
 
 function setCorsHeaders(res: VercelResponse): void {
   res.setHeader('Access-Control-Allow-Origin', '*');
   res.setHeader('Access-Control-Allow-Methods', 'GET, POST, PATCH, OPTIONS');
-  res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization');
+  res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization, Stripe-Signature');
   res.setHeader('Content-Type', 'application/json; charset=utf-8');
+}
+
+function resolveRequestOrigin(req: VercelRequest): string {
+  const originHeader = req.headers.origin;
+  if (typeof originHeader === 'string' && /^https?:\/\/[^/\s]+$/i.test(originHeader.trim())) {
+    return originHeader.trim().replace(/\/+$/, '');
+  }
+  const forwardedHost = req.headers['x-forwarded-host'];
+  const host =
+    (typeof forwardedHost === 'string' ? forwardedHost.split(',')[0].trim() : '') ||
+    (typeof req.headers.host === 'string' ? req.headers.host.trim() : '') ||
+    'www.noireofficial.ie';
+  const forwardedProto = req.headers['x-forwarded-proto'];
+  const isLocalHost = host.startsWith('localhost') || host.startsWith('127.0.0.1');
+  const protocol =
+    typeof forwardedProto === 'string'
+      ? forwardedProto.split(',')[0].trim()
+      : isLocalHost
+      ? 'http'
+      : 'https';
+  return `${protocol}://${host}`;
 }
 
 function parseJsonBody(rawBody: unknown): Record<string, unknown> {
@@ -46,6 +75,54 @@ function parseJsonBody(rawBody: unknown): Record<string, unknown> {
     return rawBody as Record<string, unknown>;
   }
   return {};
+}
+
+async function resolveRawWebhookBody(req: VercelRequest): Promise<string> {
+  const reqWithRaw = req as VercelRequest & { rawBody?: unknown };
+  if (typeof reqWithRaw.rawBody === 'string') {
+    return reqWithRaw.rawBody;
+  }
+  if (Buffer.isBuffer(reqWithRaw.rawBody)) {
+    return reqWithRaw.rawBody.toString('utf8');
+  }
+
+  // Read Vercel's restored PassThrough stream (req.read) BEFORE touching lazy req.body getter
+  if (typeof req.read === 'function') {
+    const syncChunks: Buffer[] = [];
+    let chunk: unknown;
+    while ((chunk = req.read()) !== null) {
+      syncChunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(String(chunk)));
+    }
+    if (syncChunks.length > 0) {
+      return Buffer.concat(syncChunks).toString('utf8');
+    }
+  }
+
+  if (
+    !req.readableEnded &&
+    req.method !== 'GET' &&
+    req.method !== 'HEAD' &&
+    typeof req[Symbol.asyncIterator] === 'function'
+  ) {
+    const chunks: Buffer[] = [];
+    for await (const chunk of req) {
+      chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk));
+    }
+    if (chunks.length > 0) {
+      return Buffer.concat(chunks).toString('utf8');
+    }
+  }
+
+  if (Buffer.isBuffer(req.body)) {
+    return req.body.toString('utf8');
+  }
+  if (typeof req.body === 'string') {
+    return req.body;
+  }
+  if (req.body && typeof req.body === 'object') {
+    return JSON.stringify(req.body);
+  }
+  return '';
 }
 
 async function resolveRequestBody(req: VercelRequest): Promise<unknown> {
@@ -111,6 +188,133 @@ export default async function handler(
     if (subPath === '/inventory' && method === 'GET') {
       const stock = await getInventorySnapshot();
       res.status(200).json({ success: true, stock });
+      return;
+    }
+
+    // ── GET /api/stripe/status ────────────────────────────────────────────────
+    if (subPath === '/stripe/status' && method === 'GET') {
+      res.status(200).json({
+        success: true,
+        ...getSafeStripeStatus(),
+      });
+      return;
+    }
+
+    // ── POST /api/stripe/verify-session ───────────────────────────────────────
+    if (subPath === '/stripe/verify-session' && method === 'POST') {
+      const body = parseJsonBody(await resolveRequestBody(req));
+      const result = await verifyAndFinalizeStripePayment({
+        sessionId: String(body.sessionId || ''),
+        orderReference: typeof body.orderReference === 'string' ? body.orderReference : undefined,
+        baseUrl: resolveRequestOrigin(req),
+      });
+
+      if (!result.success || !result.order) {
+        res.status(result.statusCode || 400).json({
+          success: false,
+          paid: result.paid,
+          error: result.error || 'Unable to verify Stripe payment.',
+        });
+        return;
+      }
+
+      res.status(200).json({
+        success: true,
+        paid: true,
+        alreadyPaid: Boolean(result.alreadyPaid),
+        order: {
+          orderReference: result.order.orderReference,
+          customer: result.order.customer,
+          items: result.order.items,
+          financials: result.order.financials,
+          paymentMethod: result.order.paymentMethod,
+          paymentStatus: result.order.paymentStatus,
+          stripeSessionId: result.order.stripeSessionId,
+          orderStatus: result.order.orderStatus,
+          createdAt: result.order.createdAt,
+        },
+      });
+      return;
+    }
+
+    // ── POST /api/stripe/cancel-session ───────────────────────────────────────
+    if (subPath === '/stripe/cancel-session' && method === 'POST') {
+      const body = parseJsonBody(await resolveRequestBody(req));
+      const result = await cancelAndReleaseStripeOrder({
+        sessionId: typeof body.sessionId === 'string' ? body.sessionId : undefined,
+        orderReference: typeof body.orderReference === 'string' ? body.orderReference : undefined,
+        baseUrl: resolveRequestOrigin(req),
+      });
+
+      if (!result.success) {
+        res.status(result.statusCode || 400).json({
+          success: false,
+          cancelled: false,
+          alreadyPaid: Boolean(result.alreadyPaid),
+          order: result.order,
+          error: result.error || 'Unable to cancel reservation.',
+        });
+        return;
+      }
+
+      res.status(200).json({
+        success: true,
+        cancelled: result.cancelled,
+        orderReference: result.order?.orderReference,
+      });
+      return;
+    }
+
+    // ── POST /api/stripe/webhook ──────────────────────────────────────────────
+    if (subPath === '/stripe/webhook' && method === 'POST') {
+      const rawBody = await resolveRawWebhookBody(req);
+
+      const sigHeader =
+        typeof req.headers['stripe-signature'] === 'string'
+          ? req.headers['stripe-signature']
+          : undefined;
+      const sigCheck = verifyStripeWebhookSignature({
+        rawBody,
+        signatureHeader: sigHeader,
+        webhookSecret: process.env.STRIPE_WEBHOOK_SECRET,
+      });
+
+      if (!sigCheck.valid) {
+        res.status(400).json({ success: false, error: sigCheck.error });
+        return;
+      }
+
+      const event = parseJsonBody(rawBody) as {
+        type?: string;
+        data?: { object?: { id?: string; metadata?: Record<string, string>; client_reference_id?: string } };
+      };
+      const sessionObj = event?.data?.object;
+      const sessionId = sessionObj?.id;
+      const orderReference = sessionObj?.metadata?.orderReference || sessionObj?.client_reference_id;
+
+      if (
+        (event?.type === 'checkout.session.completed' ||
+          event?.type === 'checkout.session.async_payment_succeeded') &&
+        sessionId
+      ) {
+        await verifyAndFinalizeStripePayment({
+          sessionId,
+          orderReference,
+          baseUrl: resolveRequestOrigin(req),
+        });
+      } else if (
+        (event?.type === 'checkout.session.expired' ||
+          event?.type === 'checkout.session.async_payment_failed') &&
+        (sessionId || orderReference)
+      ) {
+        await cancelAndReleaseStripeOrder({
+          sessionId,
+          orderReference,
+          baseUrl: resolveRequestOrigin(req),
+        });
+      }
+
+      res.status(200).json({ received: true });
       return;
     }
 
